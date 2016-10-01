@@ -35,7 +35,16 @@ Last but not least, Spark benefits from great integration with external data
 sources like Hive or Kafka which makes integrating Spark with your existing
 data structure seamless.
 
-SCHEMA MASTER / SLAVES
+.Cluster overview
+image::../images/cluster.svg[]
+
+On the architecture side, each worker node will run its own JVM process called
+an _Executor_ in Spark parlance. Each _Executor_ will run its own set of tasks,
+in a multithreaded manner, which have been scheduled by the _SparkSession_. The
+_SparkSession_ is part of a driver program, another JVM process, which can be
+run on a worker node or on your own computer. The _SparkSession_ is also
+responsible for interacting with the cluster manager which is responsible for
+allocating resources to your Spark application, more on that later.
 
 As opposed to other frameworks, when using Spark you can benefit from different
 subprojects which are integral components of Spark.
