@@ -49,7 +49,8 @@ allocating resources to your Spark application, more on that later.
 As opposed to other frameworks, when using Spark you can benefit from different
 subprojects which are integral components of Spark.
 
-SCHEMA DE LA STACK
+.The different Spark subprojects
+image::../images/stack.svg[]
 
 Spark Core
 ~~~~~~~~~~
@@ -175,7 +176,14 @@ _RDDs_.
 DataFrame
 ~~~~~~~~~
 
-SCHEMA DATAFRAME
+.An example DataFrame
+[options="header"]
+|==================
+| Column 1 | Column 2 | Column 3
+| 11 | "value 2 col2" | 13.36
+| 12 | "value 1 col2" | 23.42
+| 13 | "value 1 col2" | 33.76
+|==================
 
 As discussed earlier, a _DataFrame_ can be seen as a weakly-typed, distributed
 SQL table. If you come from R or pandas, the notion of dataframe is conceptually
@@ -275,8 +283,6 @@ integer.
 Dataset
 ~~~~~~~
 
-SCHEMA DATASET
-
 The _Dataset_ API is similar to the _DataFrame_ API in the sense that you still
 get the optimizations Catalyst provides but you also get the strong typing and
 API familiarity, if you have a Scala background, from the _RDD_ API. It's
@@ -346,7 +352,7 @@ book since, at the time of writing, the Spark ML API accepts _Datasets_ as
 input but usually returns _DataFrames_ plus there are ways to go from a
 _DataFrame_ to a _Dataset_ and vice versa.
 
-Benefits of Spark ML over Spark MLLIB
+Benefits of Spark ML over Spark MLlib
 -------------------------------------
 
 If you've already used Spark MLlib you might wonder why you should switch to
@@ -402,7 +408,30 @@ example, `StringIndexer` takes a _DataFrame_ with a column containing a
 categorical feature and returns the same _DataFrame_ with an added column
 containing an index corresponding to the category based on its frequency.
 
-SCHEMA
+If we go back to our example _DataFrame_ from earlier
+
+.An example DataFrame not yet indexed
+[options="header"]
+|==================
+| Column 1 | Column 2 | Column 3
+| 11 | "value 2 col2" | 13.36
+| 12 | "value 1 col2" | 23.42
+| 13 | "value 1 col2" | 33.76
+|==================
+
+And we decide to index `Column 2`, we'll obtain:
+
+.An example DataFrame with Column 2 indexed
+[options="header"]
+|==================
+| Column 1 | Column 2 | Column 3 | Column 2 indexed
+| 11 | "value 2 col2" | 13.36 | 1.0
+| 12 | "value 1 col2" | 23.42 | 0.0
+| 13 | "value 1 col2" | 33.76 | 0.0
+|==================
+
+Notice that a `Column 2 indexed` was added containing indices representing the
+initial values by decreasing frequency.
 
 Another example would be a prediction model, it takes a _DataFrame_ without
 predictions and produce the same one with a new column containing the
