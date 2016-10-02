@@ -1,4 +1,4 @@
-:source-highlighter: pygments
+:source-highlighter: coderay
 
 This chapter gives an introduction to Apache Spark and Spark ML, its machine
 learning library, and the core concepts which will be used throughout the
@@ -41,7 +41,7 @@ image::../images/cluster.svg[]
 On the architecture side, each worker node will run its own JVM process called
 an _Executor_ in Spark parlance. Each _Executor_ will run its own set of tasks,
 in a multithreaded manner, which have been scheduled by the _SparkSession_. The
-_SparkSession_ is part of a driver program, another JVM process, which can be
+_SparkSession_ is part of a driver program, another JVM, which can be
 run on a worker node or on your own computer. The _SparkSession_ is also
 responsible for interacting with the cluster manager which is responsible for
 allocating resources to your Spark application, more on that later.
@@ -86,7 +86,7 @@ As a result, no matter which language (Scala, Java, Python, R) or API
 (_Dataset_, _DataFrame_, SQL) you use,
 everything will go through the same optimizer and result in the same
 performance. This is different from the _RDD_ API where you had the best
-performance when using Scala.
+performance using Scala.
 
 You can find the paper presenting Catalyst at:
 http://people.csail.mit.edu/matei/papers/2015/sigmod_spark_sql.pdf
@@ -135,8 +135,7 @@ of writing, is in maintenance mode. And, on the other hand, the _DataFrame_
 exclusively be about the latter.
 
 However, both APIs provide functionalities to build classification, regression
-and clustering models and recommender systems in a distributed manner. They
-also bundle tools to evaluate models.
+and clustering models and recommender systems in a distributed manner.
 
 We'll give a more thorough presentation of the _DataFrame_ -based API later in
 this chapter.
@@ -146,13 +145,13 @@ Cluster managers
 
 As mentioned earlier, Apache Spark is a distributed data processing framework.
 To scale to thousands of nodes, it relies on a cluster manager. A cluster
-manager will try to satisfy Spark's requests for computing power based on what
+manager will try to satisfy Spark's requests for computing power based on which 
 machines are available in the cluster.
 
 Three cluster managers are supported by Spark: Hadoop YARN, Apache Mesos and
 Standalone (which comes bundled with Spark).
 
-~~~
+
 
 There are two main advantages to having those subprojects being part of Spark:
 you don't have to deal with version compatibility and new features and
@@ -170,7 +169,7 @@ In this section, we'll dig a bit deeper into the core concepts we'll use
 throughout the book: _DataFrame_ and _Dataset_.
 
 Both _DataFrames_ and _Datasets_ can be built from a variety of sources such as
-JSON, Parquet, tables in database accessible through JDBC, Hive tables or
+JSON, Parquet, tables in a database accessible through JDBC, Hive tables or
 _RDDs_.
 
 DataFrame
@@ -188,9 +187,6 @@ DataFrame
 As discussed earlier, a _DataFrame_ can be seen as a weakly-typed, distributed
 SQL table. If you come from R or pandas, the notion of dataframe is conceptually
 equivalent but distributed.
-
-Keep in mind that all operations performed on a _DataFrame_ will
-go through the Catalyst optimizer.
 
 Inside a _DataFrame_, data is organized into rows and named columns. However,
 the type information available to Spark for a _DataFrame_ doesn't translate into
@@ -262,8 +258,8 @@ spark.sql("SELECT name FROM users").show()
 ----
 
 As you can see, we interact with columns just with strings with no knowledge
-of the underlying type of the column we're dealing with. As a result, adding
-a number to a string-typed column will compile fine:
+of the underlying type of the column we're dealing with. As a result, filtering
+on a number for a string-typed column will work fine:
 
 .No type error
 [source,scala]
@@ -437,8 +433,6 @@ Another example would be a prediction model, it takes a _DataFrame_ without
 predictions and produce the same one with a new column containing the
 predictions.
 
-They're especially useful for formatting columns and feature engineering.
-
 You can also create your own _Transformers_ which can be extremely practical
 if you see yourself coding the same transformations over and over across your
 machine learning applications.
@@ -470,10 +464,11 @@ _Pipeline_ it will go through every one of its stages and call `transform()` or
 _Estimator_.
 
 Since a _Pipeline_ is an _Estimator_, once you call its `fit()` method you will
-obtain a _PipelineModel_ which is a _Transformer_ on which you can `transform()`
-to obtain you predictions.
+obtain a _PipelineModel_ which is a _Transformer_ on which you can call
+`transform()` to obtain you predictions.
 
-SCHEMA 1
+.Pipeline fitting
+image::../images/pipeline_fit.svg[]
 
 The top row shows an example _Pipeline_ composed of two _Transformers_
 (`StringIndexer` and `VectorAssembler`) highlighted in blue and one _Estimator_
@@ -488,7 +483,8 @@ a machine learning model we'll expand on later.
 The bottom row represents the _DataFrames_ at every step and the produced
 _Transformer_ which is a `DecisionTreeClassificationModel`.
 
-SCHEMA 2
+.PipelineModel transformation
+image::../images/pipeline_transform.svg[]
 
 The top row represents the _PipelineModel_ produced when calling `fit()` on the
 _Pipeline_. Notice that every _Estimator_ has been replaced by a _Transformer_.
@@ -503,8 +499,8 @@ About the book
 
 This book won't be an exhaustive tour of the API proposed in Spark ML. Rather,
 it is a guide that will get you from an idea for a machine learning application
-to a full-fledged application running in the cloud. In the process, we'll learn
-to deal with real data: raw and unsanatized, prototype machine learning
+to a full-fledged application running on a Spark cluster. In the process, we'll
+learn to deal with real data: raw and unsanatized, prototype machine learning
 application quickly, understand the most common machine learning algorithms and
 how they work in a distributed fashion, make your machine learning application
 production-ready through unit testing and finally deploy it to the cloud.
