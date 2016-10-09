@@ -1,22 +1,71 @@
 :source-highlighter: coderay
 
-This chapter gives an introduction to Apache Spark and Spark ML, its machine
-learning library, and the core concepts which will be used throughout the
-book. If you're already familiar with those concepts, you can go straight to
-chapter two.
+= Introduction
+:chapter 1:
 
-What is Apache Spark?
----------------------
+This chapter covers:
+
+- What is Apache Spark?
+- The core Spark concepts
+- What is Spark ML?
+- The benefits of Spark ML over MLlib
+- The core Spark ML concepts
+
+We are all confronted to large scale machine learning in our daily lives:
+
+- buying something on Amazon
+- watching a tv show or a movie on Netflix
+- searching for an image on Google
+- finding people to follow on Twitter
+- scrolling through a Facebook news feed
+- finding a place to stay on vacation on AirBnB
+- hailing an Uber
+
+Behind those features lies different machine learning domains like:
+
+- recommender systems (previewing the next movie you might want to watch)
+- classification (displaying all the images where a cow appears)
+- regression (estimating the fare for your next ride or the daily rate for the
+place you're renting for your next holidays)
+- etc
+
+Enters Apache Spark and its machine learning library Spark ML, used by some of
+the companies discussed above to implement those features. For those companies,
+as we'll see later in this chapter and in the book, Spark ML fits the bill
+perfectly because:
+
+- it's distributed: you have to be able to deal with a huge quantity of data
+- it comes with a flurry of machine learning algorithms: all of the use cases
+above can be addressed with Spark ML
+- it's easy to use: spend a lot less time onboarding new people
+- it's extendable: you have a great idea for a brand new machine learning
+algorithm and you want to try it out
+- it's open source: your new algorithm is revolutionary and you want everyone to
+benefit from it
+
+Fortunately, there are still a lot of large scale machine learning use cases to
+be uncovered, as we'll find out throughout the book, some of them probably at
+your own company.
+
+This chapter gives an introduction to Apache Spark, Spark ML and the core
+concepts which will be used throughout the book. If you're already familiar with
+those concepts, you can go straight to chapter 2.
+
+== What is Apache Spark?
 
 Apache Spark is an open source clustering framework. As a distributed data
 processing framework, it encompasses a few common features such as
 fault-tolerance and linear scalability.
 
-However, what sets it apart form its predecessor Hadoop is threefold.
+However, what sets it apart from its predecessor Hadoop is threefold:
 
-First and foremost, its main advantage is its speed. Indeed, Spark relies
-on memory to store its intermediate results and not disk which considerably
-decreases processing time.
+- speed
+- accessibility
+- great out-of-the-box integration
+
+First and foremost, speed. Spark relies on memory to store its intermediate
+results and not disk which considerably decreases processing time so you can
+have more time doing your job: make your machine learning application better.
 
 Next, which, I think, is as important as Spark's speed is its accessibility.
 A lot of effort has been put into reducing the barrier of entry in order to be
@@ -33,9 +82,11 @@ to use together two existing but distinct frameworks.
 
 Last but not least, Spark benefits from great integration with external data
 sources like Hive or Kafka which makes integrating Spark with your existing
-data structure seamless.
+data infrastructure seamless.
 
-.Cluster overview
+To give you an overview of what a Spark cluster looks like:
+
+.Overview of a Spark cluster with two nodes
 image::../images/cluster.svg[]
 
 On the architecture side, each worker node will run its own JVM process called
@@ -49,11 +100,10 @@ allocating resources to your Spark application, more on that later.
 As opposed to other frameworks, when using Spark you can benefit from different
 subprojects which are integral components of Spark.
 
-.The different Spark subprojects
+.The different Spark subprojects: graph processing, stream processing, machine learning
 image::../images/stack.svg[]
 
-Spark Core
-~~~~~~~~~~
+=== Spark Core
 
 As its name implies, Spark Core contains the base set of functionalities you can
 expect from a distributed data processing framework: fault tolerance mechanisms,
@@ -67,8 +117,7 @@ when dealing with _RDDs_, which reduce considerably the barrier of entry when
 using Spark, is that they define the same API you use when dealing with Scala
 collections.
 
-Spark SQL
-~~~~~~~~~
+=== Spark SQL
 
 Spark SQL is the module dedicated to structured data processing. As you might
 have guessed, it lets you interact with data using SQL, however, that's not all.
@@ -91,8 +140,7 @@ performance using Scala.
 You can find the paper presenting Catalyst at:
 http://people.csail.mit.edu/matei/papers/2015/sigmod_spark_sql.pdf
 
-Spark Streaming
-~~~~~~~~~~~~~~~
+=== Spark Streaming
 
 Spark Streaming handles the processing of data streams which can come from many
 message queue like systems like Apache Kafka, Kinesis or Flume.
@@ -115,16 +163,14 @@ In this case, the stream is actually represented as an unbounded _DataFrame_.
 I won't go into much detail about it since, at the time of writing, Structured
 Streaming is still in alpha release.
 
-GraphX
-~~~~~~
+=== GraphX
 
 GraphX is the subproject focused on graph processing. It relies on and extends
 the concept of _RDD_ to build directed graph with properties associated to
 each vertex and edge. A few algorithms are supported out of the box like
 PageRank.
 
-MLlib
-~~~~~
+=== MLlib
 
 MLlib is the library dedicated to distributed machine learning in Spark.
 
@@ -140,18 +186,15 @@ and clustering models and recommender systems in a distributed manner.
 We'll give a more thorough presentation of the _DataFrame_ -based API later in
 this chapter.
 
-Cluster managers
-~~~~~~~~~~~~~~~~
+=== Cluster managers
 
 As mentioned earlier, Apache Spark is a distributed data processing framework.
 To scale to thousands of nodes, it relies on a cluster manager. A cluster
-manager will try to satisfy Spark's requests for computing power based on which 
+manager will try to satisfy Spark's requests for computing power based on which
 machines are available in the cluster.
 
 Three cluster managers are supported by Spark: Hadoop YARN, Apache Mesos and
 Standalone (which comes bundled with Spark).
-
-
 
 There are two main advantages to having those subprojects being part of Spark:
 you don't have to deal with version compatibility and new features and
@@ -162,8 +205,7 @@ All those components can be used simultaneously. For example, you can query
 in SQL or make predictions using a machine learning model in a streaming
 application.
 
-Core Spark concepts
--------------------
+== Core Spark concepts
 
 In this section, we'll dig a bit deeper into the core concepts we'll use
 throughout the book: _DataFrame_ and _Dataset_.
@@ -172,10 +214,9 @@ Both _DataFrames_ and _Datasets_ can be built from a variety of sources such as
 JSON, Parquet, tables in a database accessible through JDBC, Hive tables or
 _RDDs_.
 
-DataFrame
-~~~~~~~~~
+=== DataFrame
 
-.An example DataFrame
+.An example DataFrame with 3 columns and 3 rows
 [options="header"]
 |==================
 | Column 1 | Column 2 | Column 3
@@ -198,19 +239,20 @@ small _DataFrame_ and manipulate it. Don't worry if there are some parts you
 don't totally understand, this is just to show off the _DataFrame_ API and its
 pitfalls.
 
-Let us say that you have the following file containing JSONs at hand:
+Let us say that you have the following file `users.json` containing JSONs at
+hand:
 
-.JSON file
-[source,json]
+.JSON file containing two users described with their name and couple of public and private keys
+[source,scala]
 ----
 { "name": "Alice", "public_key": "MIIEogIB", "private_key": "656qoAVR" }
 { "name": "Bob", "public_key": "2800iBLw", "private_key": "jn1tCP/4" }
 ----
 
 
-Let's load the dataset.
+Let's load the data.
 
-.Loading a dataframe
+.Loading the `users.json` file as a _DataFrame_
 [source,scala]
 ----
 val dataframe = spark.read.json("users.json")
@@ -218,7 +260,7 @@ val dataframe = spark.read.json("users.json")
 
 Now, let's find out what was loaded.
 
-.Printing the content of a dataframe
+.Printing the content of our _DataFrame_
 [source,scala]
 ----
 dataframe.show()
@@ -233,7 +275,7 @@ dataframe.show()
 
 Next, let's project on the name column.
 
-.Projecting on the name column
+.Projecting our _DataFrame_ on the name column
 [source,scala]
 ----
 dataframe.select("name").show()
@@ -248,7 +290,7 @@ dataframe.select("name").show()
 
 As mentioned earlier, you can also query your _DataFrame_ using vanilla SQL:
 
-.Projecting on the name column usin SQL
+.Projecting our _DataFrame_ on the name column using SQL
 [source,scala]
 ----
 // We need to register the DataFrame as a SQL table (here as a temporary view)
@@ -261,7 +303,7 @@ As you can see, we interact with columns just with strings with no knowledge
 of the underlying type of the column we're dealing with. As a result, filtering
 on a number for a string-typed column will work fine:
 
-.No type error
+.Filtering our _DataFrame_ using incompatible types
 [source,scala]
 ----
 dataframe.filter($"name" > 1).show()
@@ -276,8 +318,7 @@ The result, an empty _DataFrame_, is kind of difficult to interpret, we would
 have expected a type error saying that you cannot compare a string and an
 integer.
 
-Dataset
-~~~~~~~
+=== Dataset
 
 The _Dataset_ API is similar to the _DataFrame_ API in the sense that you still
 get the optimizations Catalyst provides but you also get the strong typing and
@@ -288,7 +329,7 @@ Continuing with out previous example let's see the _Dataset_ API in action.
 
 We can turn our _DataFrame_ into a _Dataset_ by defining its model:
 
-.Turning a DataFrame into a Dataset
+.Turning a _DataFrame_ into a _Dataset_
 [source,scala]
 ----
 // Our user model, notice that the field names in our model must match the
@@ -301,7 +342,7 @@ You can still project using the _DataFrame_ API as we've shown earlier. But,
 now you can use the familiar and typesafe collection API from Scala that the
 _RDD_ API benefits from:
 
-.Projecting on the name using the Dataset API
+.Projecting our _Dataset_ on the name using the _Dataset_ API
 [source,scala]
 ----
 dataset.map(user => user.name).show()
@@ -317,14 +358,13 @@ dataset.map(user => user.name).show()
 The added benefit is that you cannot do whatever you want with the different
 types in your _Dataset_, this will not compile:
 
-.Cannot compare a string and an integer
+.Trying to filter using incompatible types will result in a type error
 [source,scala]
 ----
 ds.filter(user => user.name > 1)
 ----
 
-What is Spark ML?
------------------
+== What is Spark ML?
 
 As we hinted at earlier, the machine learning library in Apache Spark is split
 in two. On the one hand, we have the historical _RDD_ -based API which
@@ -348,8 +388,7 @@ book since, at the time of writing, the Spark ML API accepts _Datasets_ as
 input but usually returns _DataFrames_ plus there are ways to go from a
 _DataFrame_ to a _Dataset_ and vice versa.
 
-Benefits of Spark ML over Spark MLlib
--------------------------------------
+== Benefits of Spark ML over Spark MLlib
 
 If you've already used Spark MLlib you might wonder why you should switch to
 Spark ML or, if you've never used Spark or Spark for a machine learning task
@@ -386,14 +425,12 @@ however, since the API is the same in Java and Python, I believe you won't have
 any trouble translating them in the language of your choice at no performance
 cost.
 
-Core Spark ML concepts
-----------------------
+== Core Spark ML concepts
 
 Next up, we'll give an overview of the concepts specific to Spark ML in order
 to give you insights on how the API is defined and how to use it.
 
-Transformer
-~~~~~~~~~~~
+=== Transformer
 
 A _Transformer_, in Spark ML parlance, is a component that will take a
 _DataFrame_ as input and return another _DataFrame_ having applied some kind
@@ -406,7 +443,7 @@ containing an index corresponding to the category based on its frequency.
 
 If we go back to our example _DataFrame_ from earlier
 
-.An example DataFrame not yet indexed
+.An example _DataFrame_ with no columns indexed
 [options="header"]
 |==================
 | Column 1 | Column 2 | Column 3
@@ -417,7 +454,7 @@ If we go back to our example _DataFrame_ from earlier
 
 And we decide to index `Column 2`, we'll obtain:
 
-.An example DataFrame with Column 2 indexed
+.The same _DataFrame_ with `Column 2` indexed
 [options="header"]
 |==================
 | Column 1 | Column 2 | Column 3 | Column 2 indexed
@@ -437,8 +474,7 @@ You can also create your own _Transformers_ which can be extremely practical
 if you see yourself coding the same transformations over and over across your
 machine learning applications.
 
-Estimator
-~~~~~~~~~
+==== Estimator
 
 Another important concept is _Estimator_. An _Estimator_ is something that will
 learn a machine learning model from a _DataFrame_. It effectively produces a
@@ -452,8 +488,7 @@ regression, linear regression, K-means, alternating least squares, etc.
 As with _Transformer_, _Estimators_ are also extendable if you want to try
 implementing an algorithm that is not already part of the library.
 
-Pipeline
-~~~~~~~~
+=== Pipeline
 
 A _Pipeline_ is the central component to Spark ML, it's an ordered sequence of
 _Estimator_ and _Transformer_ called stages. The idea is to chain algorithms and
@@ -467,7 +502,7 @@ Since a _Pipeline_ is an _Estimator_, once you call its `fit()` method you will
 obtain a _PipelineModel_ which is a _Transformer_ on which you can call
 `transform()` to obtain you predictions.
 
-.Pipeline fitting
+.Calling `fit()` on the _Pipeline_
 image::../images/pipeline_fit.svg[]
 
 The top row shows an example _Pipeline_ composed of two _Transformers_
@@ -483,7 +518,7 @@ a machine learning model we'll expand on later.
 The bottom row represents the _DataFrames_ at every step and the produced
 _Transformer_ which is a `DecisionTreeClassificationModel`.
 
-.PipelineModel transformation
+.Calling `transform()` on the _PipelineModel_ produced by calling `fit()` on the _Pipeline_
 image::../images/pipeline_transform.svg[]
 
 The top row represents the _PipelineModel_ produced when calling `fit()` on the
@@ -494,8 +529,7 @@ predictions.
 Throughout the book, we'll make those schemas so you can get the big picture of
 each machine learning application we'll build.
 
-About the book
---------------
+== About the book
 
 This book won't be an exhaustive tour of the API proposed in Spark ML. Rather,
 it is a guide that will get you from an idea for a machine learning application
