@@ -208,7 +208,7 @@ its surface area, its location, the number of bedrooms, etc which outputs a
 price:
 
 .The function we want to obtain taking all the apartment's characteristics as parameters and outputting the price we're going to suggest
-asciimath:[`f(surface area, nb bedrooms, etc) = suggested price`]
+`f(surface area, nb bedrooms, etc) = suggested price`
 
 Of course, we're looking for the best function that outputs a suggested price
 reflecting the reality of the market in the best possible way so we don't upset
