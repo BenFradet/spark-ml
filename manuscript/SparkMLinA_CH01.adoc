@@ -1,7 +1,13 @@
 :source-highlighter: coderay
+:chapter 1:
+:sectnums:
+:sectnumoffset 1:
+:figure-caption: Figure {chapter}.
+:listing-caption: Listing {chapter}.
+:table-caption: Table {chapter}.
+:leveloffset: 1
 
 = Introduction
-:chapter 1:
 
 This chapter covers:
 
