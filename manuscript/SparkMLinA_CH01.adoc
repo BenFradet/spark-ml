@@ -84,7 +84,7 @@ data infrastructure seamless.
 To give you an overview of what a Spark cluster looks like:
 
 .Overview of a Spark cluster with two nodes. The _SparkSession_ interacts with the cluster manager to obtain the required computation power. It also interacts with the executors to ditribute work.
-image::../images/cluster.svg[]
+image::../images/cluster.png[]
 
 On the architecture side, each worker node will run its own JVM process called
 an _Executor_ in Spark parlance. Each _Executor_ will run its own set of tasks,
@@ -98,7 +98,7 @@ As opposed to other frameworks, when using Spark you can benefit from different
 subprojects which are integral components of Spark.
 
 .The different Spark subprojects: graph processing, stream processing, machine learning and the supported cluster managers
-image::../images/stack.svg[]
+image::../images/stack.png[]
 
 === Spark Core
 
@@ -535,7 +535,7 @@ obtain a _PipelineModel_ which is a _Transformer_ on which you can call
 `transform()` to obtain you predictions.
 
 .Calling `fit()` on the _Pipeline_
-image::../images/pipeline_fit.svg[]
+image::../images/pipeline_fit.png[]
 
 The top row shows an example _Pipeline_ composed of two _Transformers_
 (`StringIndexer` and `VectorAssembler`) highlighted in blue and one _Estimator_
@@ -551,7 +551,7 @@ The bottom row represents the _DataFrames_ at every step and the produced
 _Transformer_ which is a `DecisionTreeClassificationModel`.
 
 .Calling `transform()` on the _PipelineModel_ produced by calling `fit()` on the _Pipeline_
-image::../images/pipeline_transform.svg[]
+image::../images/pipeline_transform.png[]
 
 The top row represents the _PipelineModel_ produced when calling `fit()` on the
 _Pipeline_. Notice that every _Estimator_ has been replaced by a _Transformer_.
