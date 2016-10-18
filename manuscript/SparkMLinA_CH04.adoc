@@ -5,7 +5,6 @@
 :figure-caption: Figure {chapter}.
 :listing-caption: Listing {chapter}.
 :table-caption: Table {chapter}.
-:leveloffset: 1
 
 = Clustering GitHub users
 
@@ -13,7 +12,7 @@ This chapter covers:
 
 - What is clustering and what is it for?
 - Understanding the K-means algorithm and its distributed variant
-- Transforming our raw data into properly formatted data
+- Transforming our raw data so we can use a clustering algorithm
 - Building a machine learning pipeline using the K-means algorithm
 - Tuning it to get the best results possible
 
@@ -68,7 +67,64 @@ image::../images/real.png[]
 By clustering only the initial data (heights and weights of people) we managed
 to uncover their sex.
 
-However, one question remains: how did we build the clusters?  That's what we'll
+However, one question remains: how did we build the clusters? That's what we'll
 find out in the next section.
 
 == The K-means algorithm
+
+K-means is one of the most widely known and used clustering algorithm because,
+as we'll see, it is fairly easy to understand and it has good performance given
+a bit of domain-specific knowledge. As a result, K-means is supported by Spark
+ML amongst other clustering algorithms.
+
+At a high level, K-means starts with _K_, a number chosen by the user of the
+algorithm, "random clusters" and, iteration after iteration, refines those
+clusters until some stopping criteria are reached.
+
+=== Choosing K
+
+CHECK ADV
+
+=== Flow of the algorithm
+
+Next up, we are going to describe a typical starting cycle for the K-means
+algorithm.
+
+We start with a dataset for which we know nothing about and _K_, the number of
+clusters we want to obtain.
+
+Following is a synthetic dataset containing 10 data points we are going to work
+with throughout the explanation:
+
+.10 synthetic data points used to illustrate our point
+image::../images/kmeans_before.png[]
+
+We then randomly choose _K_ (in our case 2) data points from the dataset and
+pick them as our initial centroids (center of our cluster):
+
+.10 synthetic data points from which we randomly selected two to serve as our initial centroids colored in red (a circle for the first cluster, a triangle for the second)
+image::../images/kmeans_init.png[]
+
+Once this is done, we repeat the following process.
+
+We compute, for every point, the distance from the point to each centroid. We
+affect a cluster depending on the closest centroid, as shown in the next plot:
+
+.10 synthetic data points for which we assigned a cluster based on the closest centroid. The centroid are in red and the "normal" points are in black. The points belonging to the first cluster are represented as circles and those belonging to the second cluster as triangles.
+image::../images/kmeans_first.png[]
+
+Finally, we compute new centers, which are not part of the original dataset, for
+each cluster by averaging the positions of all points belonging to a cluster:
+
+.10 synthetic data points for which we computed centroids by averaging the position of each data point belonging to the cluster. The new centers are colored in red.
+image::../images/new_center.png[]
+
+The last two steps describe a typical iteration: affecting clusters to data
+points and computing new centroids. This process is repeated until some stopping
+conditions are met which will be detailed in the next section.
+
+Note that small variations exist for the K-means algorithms such as TO COMPLETE
+
+=== Stopping conditions
+
+=== Distributed
