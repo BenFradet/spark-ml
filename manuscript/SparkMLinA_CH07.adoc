@@ -1,0 +1,744 @@
+:source-highlighter: coderay
+:chapter: 7
+:sectnums:
+:sectnumoffset: 2
+:figure-caption: Figure {chapter}.
+:listing-caption: Listing {chapter}.
+:table-caption: Table {chapter}.
+:leveloffset: 1
+
+= Clustering GitHub users
+
+This chapter covers:
+
+- What is clustering and what is it for?
+- Understanding the K-means algorithm and its distributed variant
+- Transforming our raw data so we can use a clustering algorithm
+- Building a machine learning pipeline using the K-means algorithm
+- Tuning it to get the best results possible
+
+Imagine you're working for GitHub and were put in charge of finding the users
+who might be most tempted by a new offering: 50% discount on the fee for private
+repositories for new paying users. Take a second to think about how you would
+find those users.
+
+Should we target power users? How do we define a power user? By setting a lower
+bound on an arbitrary metric like the number of commits per month? If the bound
+is too low we'll bother people who were never interested by the offer, if too
+high we'll limit the impact of our campaign. What if I'm the CEO of a small
+company developing, for now, open source products and, being the main contact
+with our customers, I report their problems to the dev team by logging issues
+into GitHub, am I not someone who might be interested by the offer?
+
+A lot of questions, a lot less answers.
+
+Thankfully clustering will solve our issues.
+
+== Clustering
+
+Conversely to the chapters on classification and regression where we were trying
+to predict values for new data based on a lot of previously seen examples we
+learned from, with clustering we don't know beforehand exactly what we're
+looking for. What we do want, however, is to gain insights into the structure of
+the data.
+
+The goal of clustering is to gather elements sharing some similarities under a
+cluster. The elements inside a cluster are supposed to be more similar to each
+other than to elements coming from other clusters. Ideally, in our case, we
+would have two clusters: the users who might be interested in our offer on one
+side and the others on another side. In practice, this won't be that easy
+unfortunately.
+
+As an example, we randomly sampled 50 people from the 2015 NHIS (National Health
+Interview Survey) designed by the United States' CDC (Centers for Disease
+Control and Prevention). The whole dataset can be obtained on the CDC's website
+(http://www.cdc.gov/nchs/nhis/index.htm). We then plotted their height and
+weight:
+
+.Heights and weights of 50 randomly sampled people from the 2015 NHIS
+image::../images/before.png[]
+
+Using those heights and weights, we split our data into two clusters using a
+clustering algorithm we'll detail in the next section:
+
+.Heights and weights of 50 randomly sampled people from the 2015 NHIS separated into 2 clusters. The elements belonging to the first cluster are denoted by crosses, those belonging to the second are represented as circles.
+image::../images/kmeans.png[]
+
+We have effectively discovered new information: we've separated the sample into
+two categories. However, we don't know what those categories correspond to. It
+turns out they fit rather well the sex of the person:
+
+.Heights and weights of 50 randomly sampled people from the 2015 NHIS. Females are represented as crosses and males as circles.
+image::../images/real.png[]
+
+By clustering only the initial data (heights and weights of people) we managed
+to uncover their sex.
+
+However, one question remains: how did we build the clusters? That's what we'll
+find out in the next section.
+
+== The K-means algorithm
+
+K-means is one of the most widely known and used clustering algorithm because,
+as we'll see, it is fairly easy to understand and it has good performance given
+a bit of domain-specific knowledge. As a result, K-means is supported by Spark
+ML amongst other clustering algorithms.
+
+At a high level, K-means tries to build _K_ clusters starting with _K_, a number
+chosen by the user of the algorithm, "random clusters" and, iteration after
+iteration, refining those clusters until some stopping criteria are reached.
+
+Groupings are formed based on a notion of distance, the Euclidean distance for
+example, between data points: the closest data points according to the chosen
+distance are grouped together.
+
+=== Flow of the algorithm
+
+Next up, we are going to describe a typical starting cycle for the K-means
+algorithm.
+
+We start with a dataset for which we know nothing about and _K_, the number of
+clusters we want to obtain. As we'll see later in the chapter, choosing an
+approprivate value for _K_ is a problem in itself.
+
+Following is a synthetic dataset containing 10 data points we are going to work
+with throughout the explanation:
+
+.10 synthetic data points used to illustrate our point
+image::../images/kmeans_before.png[]
+
+We then randomly choose _K_ (in our case 2) data points from the dataset and
+pick them as our initial centroids (center of our clusters):
+
+.10 synthetic data points from which we randomly selected two to serve as our initial centroids colored in red (a circle for the first cluster, a triangle for the second)
+image::../images/kmeans_init.png[]
+
+Once this is done, we repeat the following process.
+
+- We compute, for every point, the distance from the point to each centroid. We
+affect a cluster depending on the closest centroid, as shown in the next plot:
+
+.10 synthetic data points for which we assigned a cluster based on the closest centroid. The centroid are in red and the "normal" points are in black. The points belonging to the first cluster are represented as circles and those belonging to the second cluster as triangles.
+image::../images/kmeans_first.png[]
+
+- We compute new centers, which are not part of the original dataset, for
+each cluster by averaging the positions (hence the name K-means) of all points
+belonging to a cluster:
+
+.10 synthetic data points for which we computed centroids by averaging the position of each data point belonging to the cluster. The new centers are colored in red.
+image::../images/new_center.png[]
+
+The last two steps describe a typical iteration: affecting clusters to data
+points and updating our centroids. This process is repeated until some stopping
+conditions are met which will be detailed in the next section.
+
+Note that small variations exist for the K-means algorithms especially for
+finding initial centroids such as:
+
+- Randomly assigning clusters to every point and computing the initial clusters'
+centers in an ad hoc manner
+- Choosing data points as centers where the probability of choosing the data
+point _d_ is high if _d_ is far from any previously chosen centers (this is
+called K-means||, pronounced K-means parallel)
+
+=== Stopping conditions
+
+We still have one important aspect to cover: when is the algorithm supposed to
+report its results back to us? To answer this question, we need to define a
+state where we can stop the algorithm, this is also known as the convergence of
+an iterative algorithm. For K-means, we usually define convergence as the
+iteration where the affected cluster for each point hasn't changed or as the
+fact that, between two iterations, the centroids have not moved or moved very
+slightly (by a distance smaller that a tolerance specified by the user).
+
+However, a shortcoming of defining convergence as such is that, for cetrain edge
+cases, it might never be reached. That is why, in conjunction with the concept
+of convergence, we will cap the number of iterations the algorithm can perform.
+Attaining this limit will result in the termination of the algorithm.
+
+== The distributed K-means algorithm
+
+So far, we've only studied the algorithm as it would work on a single machine.
+We still have no clue about how it works inside Spark in a distributed
+fashion. This is what this section will help uncover.
+
+Just as before, we need a way to designate initial centers. Spark ML comes with
+two methods for choosing our initial centroids.
+
+- Random: _K_ data points are randomly sampled across our distributed data set
+and elected as our initial centroids
+- K-means||: We pick a first center randomly amongst our distributed data
+points. For a predefined number of steps (usually 2) we pick on average _2 x K_
+data points from our distributed dataset as new centers with probability
+proportional to their squared distances to the previously selected centers.
+Finally, since we might end up with more than _K_ centers we run a variant of
+K-means locally on our candidate centers to get the final _K_ centers.
+
+Now that we have our initial centers, we need to effectively run the algorithm.
+
+As described in the last section, we will perform a new iteration until the
+centroids we computed for this iteration are far enough (more than a tolerance
+distance specified by the user) from the centroids we got from the previous
+iteration or until we reach the maximum number of iterations (also
+specified by the user).
+
+An iteration will consist of sending the centroids computed by the previous
+iteration (or the intial ones if it's the first) to every executor in our
+Spark cluster.
+
+Once this is done, we compute the distance between each data
+point present on this executor and the centroids. We keep the closest as
+affected cluster. While finding the closest centroid, we also maintain, for
+each cluster, the sum of the data points affected to it (since they are
+basically vectors) as well as their number.
+
+This data is then retrieved on a specific Spark executor. It lets us compute
+the new centroids by dividing the sum of data points by their number for each
+cluster.
+
+== Preparing the data
+
+Now that we understand how the algorithm works, we're ready to see it in action
+on a real dataset. Once again we'll go back to the GitHub archive, remember that
+our raw data is just events which happened on GitHub at a certain point in time
+and we need data that represent the behavior of each user on GitHub in order to
+regroup them into clusters. That's what we're gonna do in this section: going
+from the raw events to a dataset containg the activity of every user.
+
+TABLES BEFORE AFTER
+
+If you want to follow along, fire up your REPL. You can alternatively have a
+look at the source code in the repository under the _chapter7_ folder in the
+_DataPreparation.scala_ file.
+
+=== Loading the data
+
+First up, let's load some sample data. What we have in the _2016-01-01.json.gz_
+are all the events which occurred on GitHub during January 1st 2016.
+
+Go ahead and place the _2016-01-01.json.gz_ file in HDFS. We'll assume it's
+available at the _/data/2016-01-01.json.gz_ path:
+
+.Loading our dataset from HDFS using the _SparkSession_ available in the REPL
+[source,scala]
+---
+val inputPath = "hdfs:///data/2016-01-01.json.gz" // <1>
+val events = spark.read.json(inputPath)           // <2>
+---
+<1> The path where our data is located.
+<2> We're reading the file as JSON since it is effectively JSON.
+
+One of the nice things when reading JSON data with Spark is that the schema
+of the data will be inferred, you can verify that yourself with:
+
+.Printing the schema of our data
+[source,scala]
+---
+events.printSchema()
+---
+
+You should get something along the lines of:
+
+.The schema of our events
+[source,scala]
+---
+root
+ |-- actor: struct (nullable = true)
+ |    |-- avatar_url: string (nullable = true)
+ |    |-- gravatar_id: string (nullable = true)
+ |    |-- id: long (nullable = true)
+ |    |-- login: string (nullable = true)
+etc
+---
+
+The fields which interest us in this chapter are the _actor_, the _type_ of
+event as well as a few fields in the _payload_.
+
+You can have a look at the data we loaded:
+
+.Looking at the first 5 records
+[source,scala]
+---
+events.show(5, truncate = false) // <1>
+---
+<1> We want to see the first 5 records and we don't want Spark to truncate the
+output.
+
+As you can see, there is a lot of information we don't need and, unfortunately,
+it's not ready to be fed into the K-Means algorithm just yet.
+
+=== Transforming our events
+
+Keep in mind that we want, for each user, the number of every type of GitHub
+actions done to serve as an indicator of the user's behavior. You can find a
+list of all the possible events at
+https://developer.github.com/v3/activity/events/types/.
+
+You can have a look at the different type of events in our dataset with:
+
+.Displaying the different event types
+[source,scala]
+---
+events
+  .select("type")         // <1>
+  .distinct()             // <2>
+  .show(truncate = false) // <3>
+---
+<1> We project on the _"type"_ field since it's the only one we're interested
+in.
+<2> We want to know the distinct event types.
+<3> We want to show those distinct event types without Spark truncating them.
+
+Unfortunately, some events have been grouped up together under the same umbrella
+even though they represent different actions. This is the case for:
+
+- https://developer.github.com/v3/activity/events/types/#createevent[CreateEvent]
+which can represent the creation of a repository, a branch or a tag
+- https://developer.github.com/v3/activity/events/types/#deleteevent[DeleteEvent]
+which can represent the deletion of a branch or a tag
+- https://developer.github.com/v3/activity/events/types/#issuesevent[IssuesEvent]
+which can represent the assignment, the labeling, the opening, etc of an issue
+- https://developer.github.com/v3/activity/events/types/#issuecommentevent[IssueCommentEvent]
+which can represent the creation, edition, or deletion of an issue comment
+- https://developer.github.com/v3/activity/events/types/#pullrequestevent[PullRequestEvent]
+which can represent the assignment, the labeling, the opening, etc of a pull
+request
+- https://developer.github.com/v3/activity/events/types/#pullrequestreviewcommentevent[PullRequestReviewCommentEvent]
+which can represent the creation, edition, or deletion of a pull request comment
+- https://developer.github.com/v3/activity/events/types/#repositoryevent[RepositoryEvent]
+which can represent the creation, deletion, publicization (going from closed to
+open source), privatization (going from open to closed source)
+
+As a result, we have to split those events up to treat the creation of a
+repository differently from the creation of a tag for example.
+
+Fortunately for us, the event "subtype" is always specified in either the
+_action_ or _ref_type_ JSON field in the _payload_ of our JSONs. For example,
+for the
+https://developer.github.com/v3/activity/events/types/#createevent[CreateEvent],
+the _ref_type_ can be _"repository"_, _"branch"_ or _"tag"_.
+
+We're going to have to create a function which looks at the _type_ field and if
+it's an event representing different things as discussed above, we'll have a
+look at either the _ref_type_ or the _action_ fields inside the _payload_.
+Thanks to this information, we'll be able to specify the type of event like
+_RepositoryCreateEvent_ instead of just _CreateEvent_.
+
+Spark uses the concept of user-defined function (UDF for short) to do this type
+of processing. This translates into a Scala function which will be applied to
+every record in our dataset.
+
+We start with the function itself:
+
+.Function "subtyping our events"
+[source,scala]
+---
+val splitEvent = (evtType: String, payload: Row) => {                     // <1>
+  val getEvent = (evt: String, subEvt: String) => subEvt.capitalize + evt // <2>
+
+  val refTypeEvents = Set("CreateEvent", "DeleteEvent")                   // <3>
+  val actionEvents = Set("IssuesEvent", "PullRequestEvent", "IssueCommentEvent",
+    "PullRequestReviewCommentEvent", "RepositoryEvent")                   // <4>
+
+  evtType match {
+    case s if refTypeEvents.contains(s) =>
+      getEvent(s, payload.getAs[String]("ref_type"))                      // <5>
+    case s if actionEvents.contains(s) =>
+      getEvent(s, payload.getAs[String]("action"))                        // <6>
+    case "WatchEvent" => "StarEvent"                                      // <7>
+    case other => other                                                   // <8>
+  }
+}
+---
+<1> Our function takes the event type contained in the _type_ column which is a
+_String_ and the _payload_ column which is a complex JSON type with many nested
+fields this why it is typed as _Row_.
+<2> Small function which will turn a type and subtype of event into a new event
+type. For example, if we have _CreateEvent_ as _evt_ and _repository_ as
+_subEvt_, it will return _RepositoryCreateEvent_.
+<3> The set of events for which the subtype is contained in the _ref_type_ field
+of the payload.
+<4> The set of events for which the subtype is contained in the _action_ field
+of the payload.
+<5> We check the value of _evtType_ and if it is one of the _refTypeEvents_, we
+get its subtype from the _"ref_type"_ field in the payload and we call our
+_getEvent_ function.
+<6> We check the value of _evtType_ and if it is one of the _actionEvents_, we
+get its subtype from the _"action"_ field in the payload and we call our
+_getEvent_ function.
+<7> If our _evtType_ is _"WatchEvent"_ we transform it into _"StarEvent"_ since
+it is actually referring to someone starring a repository and not watching it.
+Refer to https://developer.github.com/v3/activity/events/types/#watchevent[the
+documentation for this type] to know more.
+<8> If the event type is not a aggregation of sub-events, we leave it alone.
+
+Once we have defined our function, we can actually turn it into a UDF:
+
+.Turning our function into a UDF
+[source,scala]
+---
+import org.apache.spark.sql.functions.udf
+val splitEventUDF = udf(splitEvent)
+---
+
+Note that a UDF is a black box as far as Spark SQL is concerned and it won't try
+to optimize what's being done. Consequently, UDF should be used sparingly for
+things which are not possible through the multitude of operators offered by
+Spark SQL.
+
+Now that our UDF is defined, we can use it to project our raw events and keep
+only the columns we need: the username of the user who performed the event /
+action and the type of event she/he performed.
+
+.Projecting our events, keeping the columns we need: _username_ and _type_
+[source,scala]
+---
+import org.apache.spark.sql.functions.lit
+val projectedEvents = events.select(
+  $"actor.login".alias("username"),                 // <1>
+  splitEventUDF($"type", $"payload").alias("type"), // <2>
+  lit(1L).alias("count")                            // <3>
+)
+---
+<1> We go look for the _login_ field inside the _actor_ JSON field and we alias
+it (change its name) to _username_.
+<2> We use our UDF using the _type_ and _payload_ columns, we alias the result
+with _type_.
+<3> We count the events and since one line correspond to one occurrence, we
+affect it the litteral 1 for every line. We'll be summing over this column in
+the next subsection.
+
+You might be wondering what the $ sign stands for. It is a shorthand notation
+to access the column with the specified name. So, when we say _$"actor.login"_,
+we're actually referring to the column named _actor.login_ in our dataset and
+not just the string _actor.login_.
+
+Now, our dataset comprises of records containing a username as well as the
+action he performed. Don't take my word for it, check the schema and the first
+few records:
+
+.Checking the schema and the first few records of our transformed dataset
+[source,scala]
+---
+projectedEvents.printSchema()
+projectedEvents.show(5, truncate = false)
+---
+
+We now have a dataset which looks more or less like this:
+
+.Dataset after projection and application of our UDF
+[options="header"]
+|===
+|username|type|count
+|user1|ClosedIssuesEvent|1
+|user1|PushEvent|1
+|user2|RepositoryCreateEvent|1
+|user3|PushEvent|1
+|user4|BranchCreateEvent|1
+|===
+
+=== Pivoting our data
+
+Remember what we wanted the dataset to look like at the start of the section: it
+had one column for every type of event and the number of times this event
+occurred in the corresponding cell. As is, we have all the data we need but not
+the right columns. Note, however, that the name of our columns are in the _type_
+column.
+
+We effectively need to reshape our data: create one column per distinct event
+type that is present in the _type_ column and fill them with the corresponding
+data in the _count_ column. Spark comes with such a functionality which is
+called _pivot_, a notion you might be familiar with if you're used to
+single-node data analysis libraries like Pandas or R.
+
+To get better performance, we'll need to compute the columns we're going to
+create. Otherwise, Spark will do it itself.
+
+.Computing the names of the columns we're going to create
+[source,scala]
+---
+val distinctEventTypes = groupedEvents
+  .select("type")                      // <1>
+  .distinct()                          // <2>
+  .map(_.getString(0))                 // <3>
+  .collect()                           // <4>
+---
+<1> We project on the only field we need _type_.
+<2> We remove the duplicates which we don't need.
+<3> Our dataset still contains _Row_ s and we want column names: we call
+_getString_ on the first element of the _Row_ to retrieve them.
+<4> _collect_ is the way to trigger the execution of our processing and retrieve
+the results on our Spark driver for future use.
+
+We can now pivot our table:
+
+.Pivoting our table by the _type_ column
+[source,scala]
+---
+val pivotedEvents = groupedEvents
+  .groupBy("username")               // <1>
+  .pivot("type", distinctEventTypes) // <2>
+  .sum("count")                      // <3>
+  .na.fill(0L)                       // <4>
+---
+<1> We have to group our data by the _username_ column in order to have one row
+per user.
+<2> We pivot our table by the _type_ column and we supply the names of the
+columns we want we just computed.
+<3> We aggregate our results by summing the values in the _count_ column so they
+are added up and we obtain the right number of occurrences for each user / event
+combinations.
+<4> Since our data is sparse: a lot of users perform only a small set of tasks,
+we'll get a lot of null or not available (na for short) in our dataset which we
+replace or fill by 0 since this type of event didn't occur for this user.
+
+We now have our dataset in its final form:
+
+.Our dataset in its final form with one column per event type and its occurence in the corresponding cell
+[options="header"]
+|===
+|username|OpenedPullRequestEvent|ReopenedPullRequestEvent|etc
+|user1|0|0|...
+|user2|4|0|...
+|user3|3|1|...
+|===
+
+=== Saving the data
+
+We just have one more item on the list: saving our data so we can use it when
+we'll try out the K-Means algorithm:
+
+.Saving our data to the hdfs:///data/2016-01-01.csv path in CSV format
+[source,scala]
+---
+val outputPath = "hdfs:///data/2016-01-01.csv"
+pivotedEvents
+  .drop("username")         // <1>
+  .write                    // <2>
+  .format("csv")            // <3>
+  .option("header", "true") // <4>
+  .mode(SaveMode.Overwrite) // <5>
+  .save(ouputPath)          // <6>
+---
+<1> We get rid of the _username_ column since it doesn't bring any value
+anymore.
+<2> We want to write (as opposed to read) our dataset to disk.
+<3> We use the CSV format.
+<4> We specify that we want to write the headers as well.
+<5> If something is already present at the specified path, we overwrite it.
+<6> _save_ will actually trigger the writing.
+
+== Building the pipeline Naively
+
+Now that our data is ready to be fed into the K-Means algorithm we can dive in!
+
+=== Reading the dataset built during the previous section
+
+We need to read back the data we saved in the previous section (you don't have
+to if you're in the same spark-shell than in the previous section).
+
+.Reading back our behavior data
+[source,scala]
+---
+val outputPath = "hdfs:///data/2016-01-01.csv"
+val userActions = spark
+  .read                          // <1>
+  .format("csv")                 // <2>
+  .option("header", "true")      // <3>
+  .option("inferSchema", "true") // <4>
+  .load(inputPath)               // <5>
+---
+<1> We want to read (as opposed to write) our dataset from disk.
+<2> Our dataset in the CSV format.
+<3> There will be headers to read.
+<4> We ask Spark to infer the schema of our data, that way, numbers will be
+correctly typed as opposed to every field falling back to string
+<5> _load_ will actually trigger the reading.
+
+=== Assembling our columns
+
+One of the  slight quirks of the algorithms in Spark ML is that they expect all
+the features of your dataset to be smooshed together into a single vector
+column. Fortunately for us, there is a _Transformer_ dedicated to this task:
+_VectorAssembler_.
+
+.Creating our _VectorAssembler_
+[source,scala]
+---
+val assembler = new VectorAssembler()
+  .setInputCols(userActions.columns)  // <1>
+  .setOutputCol("features")           // <2>
+---
+<1> We specify our input columns which, in our case, are every single one.
+<2> _"features"_ will be our output column containing a vector will the values
+from every column.
+
+If you recall correctly, a _Transformer_ takes a _DataFrame_ and turns it
+into another one when calling its _transform_ method.
+
+.Applying our _VectorAssembler_
+[source,scala]
+---
+val formattedUserActions = assembler.transform(userActions)
+---
+
+As a result we went from the following dataset:
+
+.The dataset before assembling
+[options="header"]
+|===
+|username|OpenedPullRequestEvent|ReopenedPullRequestEvent|etc
+|user1|0|0|...
+|user2|4|0|...
+|user3|3|1|...
+|===
+
+To:
+
+.The dataset after assembling
+[options="header"]
+|===
+|username|OpenedPullRequestEvent|ReopenedPullRequestEvent|etc|features
+|user1|0|0|...|(21, [5, ...], [1.0, ...])
+|user2|4|0|...|(21, [0, ...], [4.0, ...])
+|user3|3|1|...|(21, [0, 1, ...], [3.0, 1.0, ...])
+|===
+
+You'll notice that the vectors in the _features_ column are not represented in
+an usual way. This is because they are sparse (contain a lot of 0s) and Spark
+optimizes the amount of space they take by representing them a bit differently.
+
+As a result if you see a vector represented like so:
+
+(8, [5], [1.0])
+
+It means the vector contains 8 elements, all of them zeros, except the 6th
+element since the indexing is zero-based which contains 1.0. It's equivalent to:
+
+[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+
+=== Using K-Means
+
+Now that we have a column containg all our features, we're ready to apply the
+algorithm.
+
+However, since the algorithm will make multiple passes over the data we first
+need to cache it.
+
+.Caching our data
+[source,scala]
+---
+val cachedUserActions = formattedUserActions.cache()
+---
+
+However, we need to, at least choose a value for K.
+Choosing an appropriate value for _K_ is a problem in itself. Indeed, without a
+lot of domain-specific knowledge, we can only make an educated guess as to
+the number of groupings we might find in a dataset. Coming back to our example,
+do you know into how many clusters we could divide our GitHub users? Take a
+second to think of the possible groups of user based on their behavior.
+
+A few ideas come to mind such as:
+
+- lurker: someone using GitHub as a bookmark manager for software projects,
+starring repositories she / he might be interested in
+- reporter: someone who only logs issues when they encounter a problem using a
+specific project
+- occasional/new contributor: a user who solves easy-to-fix issues a couple of
+times a month
+- hobbyist: a developer spending his free time contributing to existing projects
+or developing his own projects
+- professional: she / he is coding on GitHub as part of her / his daily job
+working for a company which develops everything in the open
+
+We end up with _K_ = 5 which might be a good value to start with. However, this
+value might need tuning as we'll see later in this chapter.
+
+.Applying the K-Means algorithm
+[source,scala]
+---
+val kmeans = new KMeans()
+  .setK(5)                                      // <1>
+  .setMaxIter(20)                               // <2>
+  .setTol(1e-4)                                 // <3>
+
+val kmeansModel = kmeans.fit(cachedUserActions) // <4>
+---
+<1> Creating a _KMeans_ object with K = 5.
+<2> We define a maximum number of iterations in case the algorithm doesn't
+manage to converge on its own. 20 iterations is the default value.
+<3> If all centers move less than this distance we'll consider the algorithm has
+converged.
+<4> Computing a _KMeansModel_ on our dataset. This will effectively run the
+algorithm and find out our 5 centers.
+
+That's it we no have our K-Means model ready to be investigated.
+
+=== Metrics and centers
+
+From the model, we can find out the cluster centers:
+
+.Printing out where our cluster centers are located
+[source,scala]
+---
+println("Cluster centers:")
+kmeansModel.clusterCenters.foreach(println)
+---
+
+We can also obtain a metric on our clustering by computing its "cost" which is
+actually the sum of squared distances affected to a cluster to the closest
+cluster center for each cluster. It is also called the within-cluster sum of
+squares (WCSS for short).
+
+.Computing the WCSS
+---
+val wcss = kmeansModel.computeCost(formattedUserActions)
+println(s"Within-cluster sum of squares for 5 clusters = $wcss")
+---
+
+=== Affecting clusters to our data points
+
+If you remember from chapter 1, a machine learning algorithm is represented
+as an _Estimator_ (the _kmeans_ variable in our case) which has a _fit_ method
+which produces a machine learning model which is a _Transformer_ (the
+_kmeansModel_ variable here). As such, we can call the _transform_ method on
+_kmeansModel_ to obtain the clusters:
+
+.Affecting cluster to our data points
+[source,scala]
+---
+val userActionsWithCenters = kmeansModel
+  .transform(formattedUserActions)       // <1>
+  .select("features", "prediction")      // <2>
+---
+<1> We call _transform_ which will add a _prediction_ column to our dataset
+containing the affected cluster.
+<2> We keep only the _features_ and _prediction_ column to unclutter the
+dataset.
+
+You should obtain something along those lines:
+
+.Resulting clusters
+|===
+|features|prediction
+|(21,[5],[1.0])|0
+|(21,[3,5,16,17],[1.0,2.0,1.0,3.0])|1
+|(21,[5,7,18],[3.0,2.0,1.0])|2
+|===
+
+== Tuning
+
++
+
+=== Evaluation
+
++
+
+=== Running multiple times
+
+=> results may depend on the initial centroids
+
+=== Choosing K
+
+== Summary
+
