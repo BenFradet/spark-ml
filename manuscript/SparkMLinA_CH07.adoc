@@ -92,6 +92,11 @@ Groupings are formed based on a notion of distance, the Euclidean distance for
 example, between data points: the closest data points according to the chosen
 distance are grouped together.
 
+This is a limitation to keep in mind, since we'll be calculating distances
+between data points, the K-Means algorithm can only handle numeric features. We
+will effectively represent our features as a vector and will be calculating
+distances between vectors.
+
 === Flow of the algorithm
 
 Next up, we are going to describe a typical starting cycle for the K-means
@@ -205,7 +210,29 @@ and we need data that represent the behavior of each user on GitHub in order to
 regroup them into clusters. That's what we're gonna do in this section: going
 from the raw events to a dataset containg the activity of every user.
 
-TABLES BEFORE AFTER
+We're looking to go from our raw JSON event data:
+
+.Our raw datset
+[options="header"]
+|===
+|actor|type|payload|etc
+|{...}|ClosedIssuesEvent|{...}|...
+|{...}|PushEvent|{...}|...
+|{...}|RepositoryCreateEvent|{...}|...
+|{...}|PushEvent|{...}|...
+|{...}|BranchCreateEvent|{...}|...
+|===
+
+to:
+
+|===
+|user|Number of pull requests opened|Number of issues logged|etc
+|user1|3|1|...
+|user2|0|2|...
+|user3|0|0|...
+|user4|4|7|...
+|user5|1|0|...
+|===
 
 If you want to follow along, fire up your REPL. You can alternatively have a
 look at the source code in the repository under the _chapter7_ folder in the
@@ -221,10 +248,10 @@ available at the _/data/2016-01-01.json.gz_ path:
 
 .Loading our dataset from HDFS using the _SparkSession_ available in the REPL
 [source,scala]
----
+----
 val inputPath = "hdfs:///data/2016-01-01.json.gz" // <1>
 val events = spark.read.json(inputPath)           // <2>
----
+----
 <1> The path where our data is located.
 <2> We're reading the file as JSON since it is effectively JSON.
 
@@ -233,23 +260,17 @@ of the data will be inferred, you can verify that yourself with:
 
 .Printing the schema of our data
 [source,scala]
----
+----
 events.printSchema()
----
 
-You should get something along the lines of:
-
-.The schema of our events
-[source,scala]
----
-root
- |-- actor: struct (nullable = true)
- |    |-- avatar_url: string (nullable = true)
- |    |-- gravatar_id: string (nullable = true)
- |    |-- id: long (nullable = true)
- |    |-- login: string (nullable = true)
-etc
----
+// root
+//  |-- actor: struct (nullable = true)
+//  |    |-- avatar_url: string (nullable = true)
+//  |    |-- gravatar_id: string (nullable = true)
+//  |    |-- id: long (nullable = true)
+//  |    |-- login: string (nullable = true)
+// etc
+----
 
 The fields which interest us in this chapter are the _actor_, the _type_ of
 event as well as a few fields in the _payload_.
@@ -258,9 +279,9 @@ You can have a look at the data we loaded:
 
 .Looking at the first 5 records
 [source,scala]
----
+----
 events.show(5, truncate = false) // <1>
----
+----
 <1> We want to see the first 5 records and we don't want Spark to truncate the
 output.
 
@@ -278,13 +299,13 @@ You can have a look at the different type of events in our dataset with:
 
 .Displaying the different event types
 [source,scala]
----
+----
 events
   .select("type")         // <1>
   .distinct()             // <2>
   .show(truncate = false) // <3>
----
-<1> We project on the _"type"_ field since it's the only one we're interested
+----
+<1> We project on the _type_ field since it's the only one we're interested
 in.
 <2> We want to know the distinct event types.
 <3> We want to show those distinct event types without Spark truncating them.
@@ -332,7 +353,8 @@ We start with the function itself:
 
 .Function "subtyping our events"
 [source,scala]
----
+----
+import org.apache.spark.sql.Row
 val splitEvent = (evtType: String, payload: Row) => {                     // <1>
   val getEvent = (evt: String, subEvt: String) => subEvt.capitalize + evt // <2>
 
@@ -349,7 +371,7 @@ val splitEvent = (evtType: String, payload: Row) => {                     // <1>
     case other => other                                                   // <8>
   }
 }
----
+----
 <1> Our function takes the event type contained in the _type_ column which is a
 _String_ and the _payload_ column which is a complex JSON type with many nested
 fields this why it is typed as _Row_.
@@ -370,16 +392,16 @@ _getEvent_ function.
 it is actually referring to someone starring a repository and not watching it.
 Refer to https://developer.github.com/v3/activity/events/types/#watchevent[the
 documentation for this type] to know more.
-<8> If the event type is not a aggregation of sub-events, we leave it alone.
+<8> If the event type is not an aggregation of sub-events, we leave it alone.
 
 Once we have defined our function, we can actually turn it into a UDF:
 
 .Turning our function into a UDF
 [source,scala]
----
+----
 import org.apache.spark.sql.functions.udf
 val splitEventUDF = udf(splitEvent)
----
+----
 
 Note that a UDF is a black box as far as Spark SQL is concerned and it won't try
 to optimize what's being done. Consequently, UDF should be used sparingly for
@@ -392,14 +414,14 @@ action and the type of event she/he performed.
 
 .Projecting our events, keeping the columns we need: _username_ and _type_
 [source,scala]
----
+----
 import org.apache.spark.sql.functions.lit
 val projectedEvents = events.select(
   $"actor.login".alias("username"),                 // <1>
   splitEventUDF($"type", $"payload").alias("type"), // <2>
   lit(1L).alias("count")                            // <3>
 )
----
+----
 <1> We go look for the _login_ field inside the _actor_ JSON field and we alias
 it (change its name) to _username_.
 <2> We use our UDF using the _type_ and _payload_ columns, we alias the result
@@ -419,10 +441,10 @@ few records:
 
 .Checking the schema and the first few records of our transformed dataset
 [source,scala]
----
+----
 projectedEvents.printSchema()
 projectedEvents.show(5, truncate = false)
----
+----
 
 We now have a dataset which looks more or less like this:
 
@@ -456,13 +478,13 @@ create. Otherwise, Spark will do it itself.
 
 .Computing the names of the columns we're going to create
 [source,scala]
----
+----
 val distinctEventTypes = groupedEvents
   .select("type")                      // <1>
   .distinct()                          // <2>
   .map(_.getString(0))                 // <3>
   .collect()                           // <4>
----
+----
 <1> We project on the only field we need _type_.
 <2> We remove the duplicates which we don't need.
 <3> Our dataset still contains _Row_ s and we want column names: we call
@@ -474,13 +496,13 @@ We can now pivot our table:
 
 .Pivoting our table by the _type_ column
 [source,scala]
----
+----
 val pivotedEvents = groupedEvents
   .groupBy("username")               // <1>
   .pivot("type", distinctEventTypes) // <2>
   .sum("count")                      // <3>
   .na.fill(0L)                       // <4>
----
+----
 <1> We have to group our data by the _username_ column in order to have one row
 per user.
 <2> We pivot our table by the _type_ column and we supply the names of the
@@ -510,7 +532,8 @@ we'll try out the K-Means algorithm:
 
 .Saving our data to the hdfs:///data/2016-01-01.csv path in CSV format
 [source,scala]
----
+----
+import org.apache.spark.sql.SaveMode
 val outputPath = "hdfs:///data/2016-01-01.csv"
 pivotedEvents
   .drop("username")         // <1>
@@ -519,7 +542,7 @@ pivotedEvents
   .option("header", "true") // <4>
   .mode(SaveMode.Overwrite) // <5>
   .save(ouputPath)          // <6>
----
+----
 <1> We get rid of the _username_ column since it doesn't bring any value
 anymore.
 <2> We want to write (as opposed to read) our dataset to disk.
@@ -528,7 +551,7 @@ anymore.
 <5> If something is already present at the specified path, we overwrite it.
 <6> _save_ will actually trigger the writing.
 
-== Building the pipeline Naively
+== Building the pipeline naively
 
 Now that our data is ready to be fed into the K-Means algorithm we can dive in!
 
@@ -539,7 +562,7 @@ to if you're in the same spark-shell than in the previous section).
 
 .Reading back our behavior data
 [source,scala]
----
+----
 val outputPath = "hdfs:///data/2016-01-01.csv"
 val userActions = spark
   .read                          // <1>
@@ -547,7 +570,7 @@ val userActions = spark
   .option("header", "true")      // <3>
   .option("inferSchema", "true") // <4>
   .load(inputPath)               // <5>
----
+----
 <1> We want to read (as opposed to write) our dataset from disk.
 <2> Our dataset in the CSV format.
 <3> There will be headers to read.
@@ -559,28 +582,28 @@ correctly typed as opposed to every field falling back to string
 
 One of the  slight quirks of the algorithms in Spark ML is that they expect all
 the features of your dataset to be smooshed together into a single vector
-column. Fortunately for us, there is a _Transformer_ dedicated to this task:
-_VectorAssembler_.
+column before applying the algorithm, it won't do it for us. Fortunately for us,
+there is a _Transformer_ dedicated to this task: _VectorAssembler_.
 
 .Creating our _VectorAssembler_
 [source,scala]
----
+----
 val assembler = new VectorAssembler()
   .setInputCols(userActions.columns)  // <1>
   .setOutputCol("features")           // <2>
----
+----
 <1> We specify our input columns which, in our case, are every single one.
-<2> _"features"_ will be our output column containing a vector will the values
-from every column.
+<2> _"features"_ will be the name of our output column containing a vector with
+the values from every column.
 
 If you recall correctly, a _Transformer_ takes a _DataFrame_ and turns it
 into another one when calling its _transform_ method.
 
 .Applying our _VectorAssembler_
 [source,scala]
----
+----
 val formattedUserActions = assembler.transform(userActions)
----
+----
 
 As a result we went from the following dataset:
 
@@ -615,21 +638,21 @@ As a result if you see a vector represented like so:
 It means the vector contains 8 elements, all of them zeros, except the 6th
 element since the indexing is zero-based which contains 1.0. It's equivalent to:
 
-[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+$$[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]$$
 
 === Using K-Means
 
 Now that we have a column containg all our features, we're ready to apply the
 algorithm.
 
-However, since the algorithm will make multiple passes over the data we first
-need to cache it.
+Since the algorithm will make multiple passes over the data we first need to
+cache it.
 
 .Caching our data
 [source,scala]
----
+----
 val cachedUserActions = formattedUserActions.cache()
----
+----
 
 However, we need to, at least choose a value for K.
 Choosing an appropriate value for _K_ is a problem in itself. Indeed, without a
@@ -656,23 +679,23 @@ value might need tuning as we'll see later in this chapter.
 
 .Applying the K-Means algorithm
 [source,scala]
----
+----
 val kmeans = new KMeans()
   .setK(5)                                      // <1>
   .setMaxIter(20)                               // <2>
   .setTol(1e-4)                                 // <3>
 
 val kmeansModel = kmeans.fit(cachedUserActions) // <4>
----
+----
 <1> Creating a _KMeans_ object with K = 5.
 <2> We define a maximum number of iterations in case the algorithm doesn't
 manage to converge on its own. 20 iterations is the default value.
-<3> If all centers move less than this distance we'll consider the algorithm has
-converged.
+<3> If all centers move less than this distance we'll deem the algorithm as
+having converged.
 <4> Computing a _KMeansModel_ on our dataset. This will effectively run the
 algorithm and find out our 5 centers.
 
-That's it we no have our K-Means model ready to be investigated.
+That's it we now have our K-Means model ready to be investigated.
 
 === Metrics and centers
 
@@ -680,10 +703,10 @@ From the model, we can find out the cluster centers:
 
 .Printing out where our cluster centers are located
 [source,scala]
----
+----
 println("Cluster centers:")
 kmeansModel.clusterCenters.foreach(println)
----
+----
 
 We can also obtain a metric on our clustering by computing its "cost" which is
 actually the sum of squared distances affected to a cluster to the closest
@@ -691,10 +714,10 @@ cluster center for each cluster. It is also called the within-cluster sum of
 squares (WCSS for short).
 
 .Computing the WCSS
----
+----
 val wcss = kmeansModel.computeCost(formattedUserActions)
 println(s"Within-cluster sum of squares for 5 clusters = $wcss")
----
+----
 
 === Affecting clusters to our data points
 
@@ -706,11 +729,11 @@ _kmeansModel_ to obtain the clusters:
 
 .Affecting cluster to our data points
 [source,scala]
----
+----
 val userActionsWithCenters = kmeansModel
   .transform(formattedUserActions)       // <1>
   .select("features", "prediction")      // <2>
----
+----
 <1> We call _transform_ which will add a _prediction_ column to our dataset
 containing the affected cluster.
 <2> We keep only the _features_ and _prediction_ column to unclutter the
@@ -742,3 +765,5 @@ You should obtain something along those lines:
 
 == Summary
 
+Fiddle with tol + max iter to see if you can get better results
+Also try out other algos such as LDA or...
