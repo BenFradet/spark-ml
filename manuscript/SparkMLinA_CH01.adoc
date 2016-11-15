@@ -14,68 +14,73 @@ This chapter covers:
 - What is Apache Spark?
 - What is Spark ML?
 - The benefits of Spark ML over MLlib
-- The core Spark concepts
-- The core Spark ML concepts
+- Core Spark concepts
+- Core Spark ML concepts
 
-We are all confronted to large scale machine learning in our daily lives, be it
-through buying something on Amazon, watching a tv show or a movie on Netflix,
-searching for an image on Google, finding people to follow on Twitter, scrolling
-through a Facebook news feed, finding a place to stay on vacation on AirBnB or
-hailing an Uber.
+We are all confronted with large-scale machine learning in our daily lives,
+whether it's through buying something on Amazon, watching a TV show or a movie
+on Netflix, searching for an image on Google, finding people to follow on
+Twitter, scrolling through a Facebook news feed, finding a place to stay on
+vacation on AirBnB or hailing an Uber.
 
-Behind those actions, which seem so simple and anchored in our daily lives, lies
-different machine learning domains such as recommender systems (previewing the
-next movie you might want to watch), classification (displaying all the images
-where a cow appears), regression (estimating the fare for your next ride or the
-daily rate for the place you're renting for your next holidays), etc.
+Behind those actions, which seem so simple and entrenched in our daily lives,
+lies different machine learning domains such as recommender systems (previewing
+the next movie you might want to watch), classification (displaying all the
+images where a cow appears), regression (estimating the fare for your next ride
+or the daily rate for the place you're renting for your next holidays), and so
+on.
 
-Enters Apache Spark and its machine learning library Spark ML, used by some of
-the companies discussed above to implement those features. For those companies,
-as we'll see later in this chapter and in the book, Spark ML fits the bill
-perfectly because it's distributed (as you might imagine, you have to be able to
-deal with a huge quantity of data), it comes with a flurry of machine learning
-algorithms (all of the use cases above can be addressed with Spark ML), it's
-easy to use (spend a lot less time onboarding new people), it's extendable (you
-have a great idea for a brand new machine learning algorithm and you want to try
-it out) and it's open source (your new algorithm is revolutionary and you want
-everyone to benefit from it).
+Apache Spark and its machine learning library Spark ML, is used by some of
+these companies to implement them. For them, as we'll see later in this chapter
+and in the book, Spark ML fits the bill perfectly because:
+
+- It's distributed. As you might imagine, you have to be able to deal with a
+huge quantity of data.
+- It comes with a broad array of machine learning algorithms. All of the use
+cases above can be addressed with Spark ML.
+- It's easy to use. You'll spend a lot less time onboarding new people.
+- It's extendable. You have a great idea for a brand new machine learning
+algorithm and you want to try it out.
+- It's open source. Your new algorithm is revolutionary and you want
+everyone to benefit from it.
 
 Fortunately, there are still a lot of large scale machine learning use cases to
 be uncovered, as we'll find out throughout the book, some of them probably at
 your own company.
 
-This chapter gives an introduction to Apache Spark, Spark ML and the core
-concepts which will be used throughout the book. If you're already familiar with
-those concepts, you can go straight to chapter 2.
+I'll introduce you to Apache Spark, Spark ML and the core concepts that will be
+used throughout the book. If you're already familiar with those concepts, you
+can go straight to chapter 2.
 
 == What is Apache Spark?
 
-Apache Spark is an open source clustering framework. As a distributed data
-processing framework, it encompasses a few common features such as
-fault-tolerance and linear scalability.
+Apache Spark is an open source cluster computing framework. As a distributed
+data processing framework, it encompasses a few common features such as
+fault-tolerance and linear scalability we can find in others such as Hadoop.
 
 However, what sets it apart from its predecessor Hadoop is threefold:
 
-- speed
-- accessibility
-- great out-of-the-box integration
+- Speed
+- Accessibility
+- Great out-of-the-box integration
 
-First and foremost, speed. Spark relies on memory to store its intermediate
-results and not disk which considerably decreases processing time so you can
-have more time doing your job: make your machine learning application better.
+First and foremost is speed. Spark relies on memory to store its intermediate
+results instead of disk which considerably decreases processing time so you can
+spend more time making improving your machine learning applcation instead for
+waiting for it to finish.
 
-Next, which, I think, is as important as Spark's speed is its accessibility.
-A lot of effort has been put into reducing the barrier of entry in order to be
-productive with a big data framework. This translates into a REPL
-(read-eval-print loop) which lets you quickly experiment and make quick and
+Next, which I think, is as important as Spark's speed, is its accessibility.
+A lot of effort has been put into reducing the barrier of entry to be
+productive with a big data framework. This translates into a read-eval-print
+loop (REPL) which lets you experiment quickly and make quick and
 dirty prototypes. This is particularly important if you're in a "fail fast fail
 often" mindset.
-Anoter aspect, which goes hand in hand with the REPL is a simple and functional
-API which lets you express distributed data processing operations as you
-would write local collection transformations using the Scala API.
-Finally, a lot of other components are made available directly through Spark
-like graph or stream processing which saves you a lot of headaches when trying
-to use together two existing but distinct frameworks.
+Another aspect, which goes hand in hand with the REPL, is a simple and
+functional API that lets you express distributed data processing operations as
+you would write local collection transformations using the Scala API.
+A lot of other components such as graph or stream processing are made available
+directly through Spark which saves you a lot of headaches when trying
+to use two existing but distinct frameworks together.
 
 Last but not least, Spark benefits from great integration with external data
 sources like Hive or Kafka which makes integrating Spark with your existing
