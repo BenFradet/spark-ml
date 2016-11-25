@@ -557,6 +557,12 @@ val model = pipeline.fit(castedTitanicTrain)
 We now have a Transformer ready to be used to make predictions on the test
 dataset.
 
+A schema of the pipeline can be seen in figure 2.2 as well as the hoops the
+`castedTitanicTrain` went through:
+
+.Walkthrough of calling the fit method on the Pipeline
+image::../images/chap2_fit.png[]
+
 == Solving the Kaggle challenge
 
 In this section, we'll use the previously built machine learning model to
@@ -637,6 +643,12 @@ val predictions = model.transform(imputedTitanicTest) // <1>
 ----
 <1> The model built is a Transformer so we can call the `transform()` method on
 it. It adds predictions to the DataFrame.
+
+Essentially, we can sum up the path traveled by the `imputedTitanicTest` with
+figure 2.3:
+
+.Result of calling the `transform()` method
+image::../images/sample_titanic.png[]
 
 If you inspect the schema of the predictions Dataset, you'll see that the model
 Transformer added 3 columns (excluding the ones created by the StringIndexers
