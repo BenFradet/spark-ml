@@ -262,11 +262,11 @@ columns, nothing seems to be out of the ordinary for those columns either.
 We're left with two columns to investigate: Fare and Age. However, since age and
 fare are continous variables they can take an infinite number of values which
 means we're not gonna be able to apply the same techniques. Fortunately, there
-is a nice 'describe()' method which can give a lot of useful information for a
+is a nice `describe()` method which can give a lot of useful information for a
 particular continous variable such as its number of non-null entries, its
 minimum, mean and maximum values as well as its standard deviation.
 
-Let's see what calling 'describe()' on the Fare columns gives us in listing 2.7:
+Let's see what calling `describe()` on the Fare columns gives us in listing 2.7:
 
 .Calling describe on the Fare column gives us summary statistics
 ----
@@ -318,8 +318,8 @@ Even though we have identified a few problems with the Fare column we won't do
 much but it's always a good idea to deepen your understanding of a dataset
 before actually using it.
 
-We're left with the Age column, if we use the 'describe' method to get a better
-understanding of what's going on with this variable, we obtain table 2.3:
+We're left with the Age column, if we use the `describe()` method to get a
+better understanding of what's going on with this variable, we obtain table 2.3:
 
 .Results of calling describe on the Age column
 [options="header"]
@@ -339,8 +339,8 @@ number of non-null values which is 714 which is below the number of observations
 issue, we'll impute a value for the ones that are missing. There exists a few
 simple strategies to decide what value to impute: the mean, the median, or the
 most frequent (usually used for categorical features). Here, we use the mean
-which is already in the summary made by the describe method: approximately 29.7
-years.
+which is already in the summary made by the `describe()` method: approximately
+29.7 years.
 
 Spark SQL defines two strategies to deal with rows containing null values:
 either drop them or replace them by another value. The latter fits our need
@@ -357,8 +357,8 @@ val imputedTitanicTrain = titanicTrain
 <1> We define a map which contains the values we want to use for each column. In
 our case we want to replace null values in the Age column by 29.7.
 <2> na lets us access functions to work with missing data in our DataFrame.
-<3> We use the fill method in order to replace missing values according to our
-previously defined map.
+<3> We use the `fill()` method in order to replace missing values according to
+our previously defined map.
 
 Our dataset is finally fit to use, we're ready to build our pipeline!
 
@@ -525,16 +525,15 @@ before assembler since the VectorAssembler assembles the indexed columns and
 decisionTree comes last since it uses the output of the VectorAssembler.
 
 If you remember correctly from chapter 1, a Pipeline is an Estimator and calling
-the 'fit' method on it actually triggers the indexing, assembling and learning
+the `fit()` method on it actually triggers the indexing, assembling and learning
 of the algorithm that are contained in the Pipeline. This produces a Transformer
 capable of adding a column to a Dataset with the predictions given by the
 algorithm or, in other words, a machine learning model.
-TO REWORK
 
 However, there is still a small requirement we're not meeting: every machine
 learning algorithm in Spark ML needs the label column to contain doubles. As is,
-the label column (Survived) contains integers as indicated by the 'printSchema'
-method on imputedTitanicTrain in listing 2.13.
+the label column (Survived) contains integers as indicated by the
+`printSchema()` method on imputedTitanicTrain in listing 2.13.
 
 .Casting the Survived column to double
 [source,scala]
@@ -636,8 +635,8 @@ the model we built in the preceding section to make predictions (listing 2.18).
 ----
 val predictions = model.transform(imputedTitanicTest) // <1>
 ----
-<1> The model built is a Transformer so we can call the transform method on it.
-It adds predictions to the DataFrame.
+<1> The model built is a Transformer so we can call the `transform()` method on
+it. It adds predictions to the DataFrame.
 
 If you inspect the schema of the predictions Dataset, you'll see that the model
 Transformer added 3 columns (excluding the ones created by the StringIndexers

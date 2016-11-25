@@ -802,19 +802,34 @@ A _Pipeline_ is the central component of Spark ML, it's defined as an Estimator
 (through inheritance) containing an ordered sequence of Estimators and
 Transformers (called stages in this context).
 
-Calling `fit()` on a Pipeline will result in a pass that goes through each stage
-and calls the `fit()` method on it if it's an Estimator.
+Calling `fit()` on a Pipeline with your training DataFrame as argument, results
+in a pass through each element in the Pipeline and:
 
-This step produces a _PipelineModel_, a Transformer since it's the result of
-calling `fit()` on an Estimator, which contains only Transformers since the
-Estimators in the original Pipeline have been converted to Transformers.
+- if it's a Transfomer, calls `transform()` on it passing the DataFrame as
+argument which produces a new DataFrame.
+- if it's an Estimator, calls `fit()` on it passing the DataFrame produced by
+the previous Transformers as argument. This produces a Transformer which goes
+through the same treatment as the first alternative except if it's the last
+Estimator. Indeed, the Transformer produced by your last Estimator is always
+going to be your machine learning model. As a result, this Transformer and the
+ones after it are not applied: it doesn't make sense to make predictions on the
+dataset used to do the learning.
 
-Calling `transform()` on a PipelineModel is going to trigger a call to every
-Transformer's `transform()` method.
+You can see that the original DataFrame with which we called the `fit()` method
+goes through all the Transformers except for the ones after the machine learning
+model.
+
+All the Transformers, either those which were originally part of the Pipeline or
+the ones resulting from the conversions of Estimators, are packed up in a
+_PipelineModel_, a Transformer since it's the result of calling `fit()` on an
+Estimator.
+
+Calling `transform()`, with your test DataFrame, on a PipelineModel is going to
+trigger a call to every Transformer's `transform()` method.
 
 The whole process is described in figure 1.3 and 1.4.
 
-.Calling `fit()` on the Pipeline
+.Calling `fit()` on the Pipeline with the training DataFrame as argument
 image::../images/pipeline_fit.png[]
 
 The top row in figure 1.3 shows an example of a Pipeline composed of one
@@ -828,15 +843,20 @@ DecisionTreeClassifier is classification we'll expand on later which could be
 used, for example, to tell spam apart from non-spam emails.
 
 The bottom row in figure 1.3 shows the result of calling `fit()` on the
-Pipeline of the top row. You can see that the Estimators have been converted to
-Transformers: StringIndexer became _StringIndexerModel_ and
-DecisionTreeClassifier became _DecisionTreeClassificationModel_.
+Pipeline of the top row on the training DataFrame. Since StringIndexer is an
+Estimator, it will be converted to a Transformer: _StringIndexerModel_ and this
+Transformer will be applied to our DataFrame to produce indices for the
+concerned columns. Because VectorAssembler is already a Transformer, it will
+be directly applied assembling all the columns in our training DataFrame.
+However, since DecisionTreeClassifier is the last Estimator in the Pipeline, it
+will be converted to a Transformer: _DecisionTreeClassificationModel_ (which is
+the machine learning model) but it won't be applied on the training DataFrame.
 
-.Calling `transform()` on the PipelineModel produced by calling `fit()` on the Pipeline
+.Calling `transform()` on the PipelineModel with the test DataFrame as argument
 image::../images/pipeline_transform.png[]
 
 The top row in figure 1.4 represents the PipelineModel produced when calling the
-`fit()` method on the Pipeline.
+`fit()` method on the Pipeline with every Transformer.
 
 The bottom row in figure 1.4 shows the intermediate DataFrames produced after
 the application of each Transformer in sequence. The final DataFrame will
