@@ -335,7 +335,7 @@ of the data will be inferred; you can verify that yourself by printing the
 schema of the loaded DataFrame as shown in listing 7.2:
 
 .Printing the schema of our data
-[source,scala]
+[subs="specialcharacters,quotes"]
 ----
 events.printSchema()
 
@@ -344,11 +344,12 @@ events.printSchema()
 //  |    |-- avatar_url: string (nullable = true)
 //  |    |-- gravatar_id: string (nullable = true)
 //  |    |-- id: long (nullable = true)
-//  |    |-- [yellow-background]#login: string (nullable = true)#
+//  |    |-- *login: string (nullable = true)*
 // ...
-//  |-- [yellow-background]#payload: struct (nullable = true)#
+//  |-- *payload: struct (nullable = true)*
 // ...
-//  |-- [yellow-background]#type: string (nullable = true)#
+//  |-- *type: string (nullable = true)*
+// ...
 ----
 
 The schema is huge because it is the result of the union of each different
@@ -435,7 +436,7 @@ CreateEvent, the ref_type can be repository, branch, or tag (listing 7.4).
 ----
 {
   "ref": "0.0.1",
-  [yellow-background]#"ref_type": "tag"#,
+  "ref_type": "tag",
   "master_branch": "master",
   // ...
 }
@@ -448,7 +449,7 @@ or deleted (listing 7.5).
 [source,json]
 ----
 {
-  [yellow-background]#"action": "created"#,
+  "action": "created",
   "issue": {
     "url": // ...
   }
