@@ -14,7 +14,7 @@ This chapter covers
 - Cluster analysis and how it is used
 - Understanding the K-means algorithm and its distributed variant
 - Transforming raw data so we can use a clustering algorithm
-- Building a machine learning pipeline using the K-means algorithm
+- Building a machine learning model using the K-means algorithm
 - Tuning the pipeline to get the best results possible
 
 Imagine you're working for GitHub and you are put in charge of finding the users
@@ -250,19 +250,20 @@ is 20.
 
 As far as Spark ML is concerned, an iteration will consist of sending the
 centroids computed by the previous iteration (or the initial ones if it's the
-first) to every executor in our Spark cluster.
+first) to every executor in our Spark cluster (step 1 in figure 7.8).
 
 Once this is done, the distance between each data point present on this executor
 and the centroids will be computed. The closest will be kept as affected
 cluster. While finding the closest centroid the sum of the data points affected
 to it will be maintained (because they are vectors) as well as their number for
-each cluster.
+each cluster (step 2 in figure 7.8).
 
-This data is then retrieved on a specific Spark executor. It lets us compute
-the new centroids by dividing the sum of data points by their number for each
-cluster.
+This data is then retrieved on the driver (step 3 in figure 7.8). It lets us
+compute the new centroids by dividing the sum of data points by their number for
+each cluster (step 4 in figure 7.8).
 
-SCHEMA
+.Schema of an iteration of the K-Means algorithm in Spark ML with 4 executors
+image::../images/kmeans_iter.png[]
 
 Now that we understand how K-Means works inside of Spark ML, we're ready to
 use it to solve our use case. The first step will be to format our data as
@@ -679,7 +680,7 @@ userActions
 <3> We specify that we want to write the headers as well.
 <4> `save` will actually trigger the writing.
 
-== Building the pipeline naively
+== Building the model naively
 
 Now that our data is ready to be fed into the K-Means algorithm we can dive in!
 
