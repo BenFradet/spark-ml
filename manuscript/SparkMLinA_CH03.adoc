@@ -1,0 +1,716 @@
+:source-highlighter: coderay
+:chapter: 3
+:sectnums:
+:sectnumoffset: 2
+:figure-caption: Figure {chapter}.
+:listing-caption: Listing {chapter}.
+:table-caption: Table {chapter}.
+:leveloffset: 1
+
+= The GitHub archive
+
+This chapter covers:
+
+- The dataset we're going to use throughout the rest of the book: the GitHub
+archive
+- The different type of events the GitHub archive keeps track of
+- The different use cases we'll cover and how we will cover them
+
+From now on, we'll use the same dataset for our machine learning use cases. The
+point is simple: getting closer to a real-world situation.
+
+Indeed, chances are that you won't work in your everyday life on properly
+formatted datasets coming from the academia that have nothing in common and are
+especially fit for one machine learning use case.
+
+Rather, you will probably have to deal with messy datasets that revolve around
+your business for which you will have to come up with different machine learning
+use cases that solve different problems your business is facing.
+
+As an example, if you were to predict the price for a listing on AirBnB at a
+particular point in time, you might concern yourself with previous AirBnB
+listings for this area but also general real estate data as well as tourism
+frequentation data across the year (a listing near a water park might not be
+registered at the same price in August and in November).
+
+That's why, to mimic those settings, we'll concern ourselves with the history
+of everything that has happened on GitHub (https://github.com) and put ourselves
+in the shoes of someone who works for GitHub. Our mission will be to improve
+the GitHub product through machine learning.
+
+== What is the GitHub archive?
+
+GitHub Archive (https://www.githubarchive.org) is an open source project
+(https://github.com/igrigorik/githubarchive.org) which aims to "record the
+public GitHub timeline, archive it and make it easily accessible for further
+analysis".
+
+As a result this project provides all the data from the GitHub API
+(https://developer.github.com) as JSONs. All this data is aggregated into hourly
+archives and made available through an HTTP endpoint which takes the form of
+`http://data.githubarchive.org/{year}-{month}-{day}-{hour}.json.gz` where the
+hour is in the 0-24 format in the UTC timezone. For instance, if we want to
+retrieve the data for the 4th of June 2016 at 6pm UTC, we would query the
+following url `http://data.githubarchive.org/2016-06-04-18.json.gz`.
+
+Exploring this dataset presents a few advantages.
+
+Spark ML is about large-scale machine learning and the scale of this dataset is
+pretty large. For instance, there is 185 Mb of data for June 4th 2016. If we
+suppose that June 4th is a typical day regarding activity on GitHub we end up
+with more than 67 Gb to analyze for the year 2016 alone.
+
+Since we've all used GitHub before (or at least know about it), I think we can
+all relate to the data we'll work with. Plus, we'll have some domain knowledge
+which is always good to have when investigating a machine learning problem, it
+will greatly help when investigating the data. This is, once again, to put in
+perspective with academic datasets where you might not know anything about the
+data and/or not care about it.
+
+Another interesting aspect is the fact that this a real-world dataset and not
+some already properly formatted academic datasets ready to be used for this
+specific machine learning task. As a result, we will spend a lot of time
+throughout the book preparing and investigating our data. In my opinion, this
+reflects perfectly the reality of creating a machine learning application: in my
+experience, you'll spend 60% getting your data ready for prime time and the rest
+actually building a machine learning model and tuning it.
+
+Finally, we will be continuously exploring the dataset coming from a single
+company throughout the rest of the book, only through different lenses. This
+also gets us closer to what you would do at work: work with the data your
+company has gathered primarily and, additionaly, a few satellite datasets coming
+from external sources.
+
+== Event types
+
+Each line in the GitHub archive dataset is an event that occurred on GitHub at a
+certain point in time. In this section, we'll investigate each event type and
+what they represent.
+
+You can find the full list of event types in the GitHub API documentation at
+https://developer.github.com/v3/activity/events/types.
+
+A quick note on notation, in the following listings `{ ... }` will denotate
+a JSON object too complex or large to represent.
+
+Usually, all the events share a common schema as shown in listing 3.1:
+
+.The common schema for all events
+[source,json]
+----
+{
+  "id": "2489651045",                                                   // <1>
+  "actor": {                                                            // <2>
+    "id": 1737211,
+    "login": "BenFradet",
+    "gravatar_id": "BenFradet",
+    "url": "https://api.github.com/users/BenFradet",
+    "avatar_url": "https://avatars.githubusercontent.com/u/2489651045?"
+  },
+  "repo": {                                                             // <3>
+    "id": 123456,
+    "name": "BenFradet/spark-ml-in-action",
+    "url": "https://api.github.com/repos/BenFradet/spark-ml-in-action"
+  },
+  "public": true,                                                       // <4>
+  "created_at": "2016-11-11T18:38:22Z",                                 // <5>
+  "type": "TheEventType",                                               // <6>
+  "payload": {                                                          // <7>
+    "repository": { ... },                                              // <8>
+    "sender": { ... }                                                   // <9>
+    // Elements specific to the event type
+    ...
+  }
+}
+----
+<1> Each element has its own id, represented as a string.
+<2> There is metadata about the "actor", the person or bot who performed this
+particular action.
+<3> There is also metadata about the repository the action was performed on.
+<4> All the events recorded by the GitHub archive are public.
+<5> The timestamp of the event.
+<6> The type of event that occurred.
+<7> All the information specific to the particular event type is contained in
+the payload.
+<8> Each payload contains data regarding the repository the event relates to.
+<9> Each payload also incorporates metadata about the user who triggered the
+event.
+
+You'll notice that the payload's repository field is just a more detailed
+representation of the top-level repo field. The same goes for the payload's
+sender and actor fields.
+
+Now that we have a pretty good idea of the schema common to all events, we can
+dive into each event type.
+
+=== CommitCommentEvent
+
+This event is only triggered when someone creates a comment on a commit, the
+structure of its payload is detailed in listing 3.2 (json objects are not
+entirely detailed for conciseness):
+
+.The structure of a CommitCommentEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "CommitCommentEvent",
+  "payload": {
+    "action": "created",                // <1>
+    "comment": { ... },                 // <2>
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> The commit comment event only concerns itself with comment creation.
+<2> The payload contains data about the comment itself.
+
+=== CreateEvent
+
+This event occurs when a user creates a repository, a branch or a tag (listing
+3.3).
+
+.The structure of a CreateEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "CreateEvent",
+  "payload": {
+    "ref_type": "repository",                                 // <1>
+    "ref": null,                                              // <2>
+    "master_branch": "master",                                // <3>
+    "description": "Content for the Spark ML in action book", // <4>
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> The type of thing created: either repository, tag or branch.
+<2> The reference to the thing created: its name in case of branch or tag
+creation or null for the creation of a repository.
+<3> The name of the default branch for the repository, master by default.
+<4> The repository description.
+
+=== DeleteEvent
+
+When someone deletes a branch or a tag, this event is fired (listing 3.4).
+
+.The structure of a DeleteEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "DeleteEvent",
+  "payload": {
+    "ref_type": "branch",               // <1>
+    "ref": "develop",                   // <2>
+    "pusher_type": "user",              // <3>
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> The type of thing deleted: branch or tag.
+<2> The name of the deleted branch or tag.
+<3> TO INVESTIGATE
+
+=== ForkEvent
+
+A ForkEvent is recorded whenever a user forks a repository (listing 3.5).
+
+.The structure of a ForkEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "ForkEvent",
+  "payload": {
+    "forkee": { ... },                  // <1>
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> This is a json object containing all sorts of information regarding the
+created repository such as its owner, its url, its name and so on.
+
+=== GollumEvent
+
+When you create or edit a wiki page on your repository, a GollumEvent is
+triggered (listing 3.6). The name Gollum comes from the wiki system Github uses
+internally (https://github.com/gollum/gollum).
+
+.The structure of a GollumEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "GollumEvent",
+  "payload": {
+    "pages": [                                                                     // <1>
+      {
+        "page_name": "SparkML",                                                    // <2>
+        "title": "Spark ML",
+        "summary": null,
+        "action": "created",
+        "sha": "91ea1bd42aa2ba166b86e8aefe049e9837214e67",
+        "html_url": "https://github.com/benfradet/spark-ml-in-action/wiki/SparkML"
+      }
+    ],
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> The payload contains an array containing metadata about the created or
+updated pages.
+<2> For each page in the array, you will find its name, title, whether it was
+created or updated as well as the URL where it was published.
+
+=== IssueCommentEvent
+
+Whenever a GitHub user creates, edits or deletes a comment on an issue, an
+IssueCommentEvent is logged (listing 3.7).
+
+.The structure of a IssueCommentEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "IssueCommentEvent",
+  "payload": {
+    "action": "created",                // <1>
+    "changes": { ... },                 // <2>
+    "issue": { ... },                   // <3>
+    "comment": { ... },                 // <4>
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> The action performed with respect to the comment: created, edited or
+deleted.
+<2> If the comment was edited, the changes made to the comment are recorded in
+a json object.
+<3> The issue the comment belongs to.
+<4> The text in the comment as well as metadata about it.
+
+=== IssuesEvent
+
+Following the events related to commenting an issue, there are also events
+triggered when someone assigns/unassigns, labels/unlabels, opens, edits, closes
+or reopens an issue (listing 3.8).
+
+.The structure of a IssuesEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "IssuesEvent",
+  "payload": {
+    "action": "opened",                 // <1>
+    "changes": { ... },                 // <2>
+    "issue": { ... },                   // <3>
+    "assignee": { ... },                // <4>
+    "label": { ... },                   // <5>
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> Corresponds to the action performed, can be one of "assigned", "unassigned",
+"labeled", "unlabeled", "opened", "edited", "milestoned", "demilestoned",
+"closed", or "reopened".
+<2> If the action was "edited", there will be a changes json object containing
+the various changes made to the issue.
+<3> The issue the action was performed on.
+<4> If the action was "assigned" or "unassigned", there will be metadata about
+the concered user.
+<5> If the action was "labeled" or "unlabeled", there will be metadata about
+the label.
+
+=== MemberEvent
+
+GitHub keeps also track of whether a user is a collaborator on a repository or
+has their permissions changed (listing 3.9).
+
+.The structure of a MemberEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "MemberEvent",
+  "payload": {
+    "action": "added",                  // <1>
+    "changes": { ... },                 // <2>
+    "member": { ... },                  // <3>
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> Whether the user was added or removed as a collaborator on a repository or
+their permissions were edited.
+<2> The changes to the permissions if the action was "edited".
+<3> The user concerned by the performed action.
+
+=== PublicEvent
+
+When someone open sources a private repository, the GitHub API publishes a
+PublicEvent which is then captured by the GitHub Archive (listing 3.10).
+
+.The structure of a PublicEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "PublicEvent",
+  "payload": {
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+
+For this type of event, there are no specific pieces of data since all the
+needed payload can be found in repository and sender.
+
+=== PullRequestEvent
+
+The following events regarding pull requests are also fired by the GitHub API:
+assignment, unassignment, opening, reopening, closing, edition, deletion,
+synchronization (listing 3.11).
+
+.The structure of a PullRequestEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "PullRequestEvent",
+  "payload": {
+    "action": "opened",                 // <1>
+    "number": 1,                        // <2>
+    "pull_request": { ... },            // <3>
+    "changes": { ... },                 // <4>
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> The action performed, can be one of "assigned", "unassigned", "labeled",
+"unlabeled", "opened", "edited", "closed" or "reopened".
+<2> The pull request number.
+<3> Various metadata about the pull request itself, notably the base branch and
+its associated repository as well as the branch the base branch is begin
+compared to and its repository.
+<4> Contains the changes made to the comment if the action was "edited".
+
+=== PullRequestReviewEvent
+
+Let's say you opened a pull request against a repository and the maintainer
+approved or disapproved, a PullRequestReviewEvent is triggered for which the
+payload looks like listing 3.12.
+
+.The structure of a PullRequestReviewEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "PullRequestReviewEvent",
+  "payload": {
+    "action": "submitted",              // <1>
+    "pull_request": { ... },            // <2>
+    "review": { ... },                  // <3>
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> The action can only be "submitted".
+<2> Various metadata about the pull request, notably the base branch and
+its associated repository as well as the branch the base branch is begin
+compared to and its repository.
+<3> The content of the review (approved or not) as well as data about who posted
+it.
+
+=== PullRequestReviewCommentEvent
+
+Continuing with reviewing pull requests, you can also leave comments without
+approving or disapproving the entire pull request. In this case, a
+PullRequestReviewCommentEvent is published as listing 3.13.
+
+.The structure of a PullRequestReviewCommentEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "PullRequestReviewEvent",
+  "payload": {
+    "action": "created",                // <1>
+    "pull_request": { ... },            // <2>
+    "comment": { ... },                 // <3>
+    "changes": { ... },                 // <4>
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> The action performed: a comment can be "created", "edited" or "deleted".
+<2> Metadata about the pull request.
+<3> The comment itself.
+<4> If the action is "edited", the changes field is present and contains the
+changes made to the comment.
+
+=== PushEvent
+
+Whenever someone pushes on a branch of a repository hosted on GitHub, a
+PushEvent is fired, the associated json is described in listing 3.14.
+
+.The structure of a PushEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "PushEvent",
+  "payload": {
+    "push_id": 1436618848,
+    "ref": "refs/heads/master",                            // <1>
+    "head": "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",    // <2>
+    "before": "9049f1265b7d61be4a8904a9a27120d2064dab3b",  // <3>
+    "size": 1,
+    "distinct_size": 1,
+    "commits": [                                           // <4>
+      {
+        "sha": "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+        "author": {
+          "name": "Ben Fradet",
+          "email": "ben.fradet@gmail.com",
+        },
+        "message": "Describing a push event",
+        "distinct": "true",
+        "url": "https://api.github.com"
+      }
+    ],
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> This represents the git ref the push pertains to. For example, here we
+pushed to the master branch.
+<2> This is the hash of the commit currently at the head of the specified ref.
+<3> The hash of the commit which was at the head of the specified ref before
+the push.
+<4> There is an array containing the commits pushed. For each commit, there is
+data about the author and the commit message.
+
+=== ReleaseEvent
+
+Publising a release on GitHub results in a ReleaseEvent described in listing
+3.15:
+
+.The structure of a ReleaseEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "ReleaseEvent",
+  "payload": {
+    "action": "published",              // <1>
+    "release": { ... },                 // <2>
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> The action will always be published as only creation is recorded.
+<2> Metadata about the release itself such as the author, the linked tag as
+well as the download links.
+
+=== WatchEvent
+
+Last but not least, the watch event that keeps track of people starring
+repositories and not watching them as one might think from its name. This event
+is described in listing 3.16:
+
+.The structure of a WatchEvent
+[source,json]
+----
+{
+  "id": "2489651045",
+  "actor": { ... },
+  "repo": { ... },
+  "public": true,
+  "created_at": "2016-11-11T18:38:22Z",
+  "type": "WatchEvent",
+  "payload": {
+    "action": "started",                // <1>
+    "repository": { ... },
+    "sender": { ... }
+  }
+}
+----
+<1> The GitHub API only keeps track of people starring a repository and not
+unstarrring this why the action is always "started". As can be inferred from
+the payload, the "sender" starred the "repository".
+
+=== Full examples
+
+You can find complete examples for every event type at
+https://developer.github.com/v3/activity/events/types/#eventtype. For example
+https://developer.github.com/v3/activity/events/types/#createevent for the
+CreateEvent type.
+
+Now that you know the data, can you think of machine learning applications that
+would make the GitHub product better?
+
+== Use cases
+
+Let's give a brief overview of the use cases we will be covering through the
+rest of the book, see how they compare to those you came up with.
+
+=== Triaging GitHub issues
+
+The first use case aims to ease the life of busy maintainers of successful open
+source projects. It is about automatically triaging issues. What I mean by that
+is to find a way to detect the content of an issue for a project and label it
+appropriately.
+
+Let's say I have to write a RESTful API to expose some data over HTTP.
+
+I decide to try out an open source library that lets me build HTTP APIs.
+However, despite looking at the documentation, I can't fiund how to change
+on which port the server is actually bound. The readme for the project suggests
+that users should ask their questions through GitHub issues. I do so, the
+maintainers give me a response and I move on.
+
+A couple of weeks go by and I'm still implementing my API, and encounter a bug
+in the authentication layer. I report it and it is fixed a couple of days later.
+
+A few months pass and I've been using the same library to implement my APIs. As
+a heavy user, I have a few ideas in mind about how the library could be
+improved. As a result, I log a GitHub issue containing a feature request about
+handling the OAuth standard. The maintainers agree and add the feature request
+in their backlog.
+
+For me, the process was easy, I logged issues, they were taken into account by
+the maintainers. However, from the maintainers' point of views there was a lot
+of overhead. They had to manually check every issue, understand the problem,
+label it properly and, at a later stage, take actions.
+
+What chapter 4 and 5 will try to solve is the first stage: check every incoming
+issue, understand it, and label it properly.
+
+This will greatly help the maintainers as they won't have to deal with the
+previously mentioned burden. Our example was one user logging 3 issues, imagine
+what that would be for a very successful projects with hundreds of people
+logging issues. For example, if one of them has time to tackle only a question,
+she can dive in directly into an issue that has been automatically labeled.
+Another example would be to track the feature requests and log them to an
+external project management tool like JIRA.
+
+=== Predicting the solving time of GitHub issues
+
+For chapter 6, we're going to change perspective and try to help contributors as
+opposed to maintainers.
+
+Did you ever find yourself proposing changes to a repository through a pull
+request and wondered how much time it would take the maintainers to come back
+to you?
+
+This is what we're going to try to solve by estimating how much time is
+typically needed for feedback.
+
+The goal is to let the user who proposed the pull request know that it's going
+to take approximately this much time for the maintainer to come back to them. As
+a result, there is no need to ping the maintainer to try to speed the process
+up.
+
+The benefit is double: on one hand the maintainers are not flooded with requests
+for feedback and, on the other hand, the contributors get immediate feedback.
+
+A finished application could take the form of a bot commenting on your pull
+request the time our machine learning application estimated.
+
+=== Clustering GitHub users
+
+In chapter 7, we will try to regroup users based on their usage of the website.
+The goal will be to find the group of users that is the most likely to be
+interested by a discount for private repositories for new paying users.
+
+Once this group of users identified, we could launch an ad campaign targeting
+them through broadcasts (the small antennas you see on the top-right of your
+GitHub timeline: https://github.com/blog/592-broadcasts) for example.
+
+=== Finding out repositories you might be interested in
+
+In chapter 8, we will build a recommendation system that will be able to suggest
+repositories that you might be interested in based on the repositories you
+starred in the past.
+
+We will limit ourselves to building the model but a polished project could
+post regularly in your GitHub timeline: "Hey checkout this project!" based on
+the most recommended repositories our model issued.
+
+== Summary
+
+Now that we got to know the data and the use cases we'll cover, let's dive in
+and do some actual machine learning!
