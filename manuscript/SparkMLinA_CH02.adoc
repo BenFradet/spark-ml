@@ -9,39 +9,38 @@
 
 = Who did and didn't die on the Titanic
 
-This chapter covers:
+This chapter covers.
 
-- The different concepts we saw in chapter 1 in action: Dataset/DataFrame,
-Transformer, Estimator and Pipeline
+- Applications of Dataset/DataFrame, Transformer, Estimator and Pipeline
 - Understanding a small dataset in a machine learning context
-- Being confronted to a simple machine learning problem and solving it using
-Spark ML
+- Confronting a simple machine learning problem and solving it using Spark ML
 
 Now that we have a broad understanding of Apache Spark and its machine learning
-library Spark ML, we're ready to apply those newly-learned concepts to a
-small-scale real-world example: the Titanic.
+library, Spark ML, we're ready to apply those newly learned concepts to a
+small-scale real-world example. The Titanic.
 
-This chapter we'll take you through a Kaggle competition (http://kaggle.com/).
+In this chapter, we'll take you through a Kaggle competition
+(https://www.kaggle.com/).
 Kaggle is a website hosting machine learning competitions giving away money
 prizes or job offers for the very best. They happen to have an introductory
-competition about the Titanic (http://kaggle.com/c/titanic) for people
+competition about the Titanic (https://www.kaggle.com/c/titanic) for people
 interested in trying their hands at machine learning.
 
 == The problem
 
 For this competition, Kaggle provides a dataset for which each observation
-represents a passenger who was on the Titanic as shown in figure 2.1:
+represents a passenger who was on the Titanic as shown in figure 2.1.
 
-.A sample of five passengers in the dataset with the corresponding headers
+.A sample of five passengers in the dataset with the corresponding headers.
 image::../images/sample_titanic.png[]
 
-As you can see, we have a few columns at our disposal:
+We have a few columns at our disposal:
 
 - PassengerId: an identifier for each passenger
 - Survived: 1 if the passenger survived, 0 if she / he didn't
 - Pclass: the class the passenger was in (1st, 2nd or 3rd)
 - Name: the passenger's name
-- Sex: Male or female
+- Sex: Male or female gender
 - Age: the passenger's age
 - SibSp: the sum of the number of siblings and spouses onboard
 - Parch: the sum of the number of parents and children onboard
@@ -51,78 +50,78 @@ As you can see, we have a few columns at our disposal:
 - Embarked: the passenger's port of embarcation (C for Cherbourg in France, S
 for Southampton in England, Q for Queenstown in Ireland)
 
-The previous dataset is split in two: one with the Survived column and another
-one without. As you might have guessed the task will be to predict if the
-passengers in the second dataset survived or not. In other words, predict the
-value of the Survived column.
+The dataset is split in two: one with the Survived column and
+another one without. Those are the train.csv and test.csv files respectively
+which can be found on Kaggle (https://www.kaggle.com/c/titanic/data). As you
+might have guessed, the task is to predict whether the passengers in the second
+dataset survived. In other words, predict the value of the Survived column.
 
-The 'train.csv' file contains our training data which consists of 891 labeled
+The train.csv file contains our training data which consists of 891 labeled
 data points (observations for which we know the value we want to predict: the
-content of the Survived column). On the other hand, the 'test.csv' file contains
-the unlabeled data we will have to make predictions on, it is made of 418
+content of the Survived column). On the other hand, the test.csv file contains
+the unlabeled data where survival predictions are needed; it contains 418
 observations.
 
-The goal is to leverage the training data to learn a model which will be able
-to predict whether a passenger survived. And, as a second step, use what we
-learned in the first step to make predictions on our test data.
+We want to leverage the training data to learn a model that will be able
+to predict whether a passenger survived. And, as a second step, we will use what
+we learned in the first step to make predictions on our test.csv data.
 
-You might have guessed that this is a supervised learning problem because we can
-view it as building a function that given all the information available on a
-passenger (fare, sex, port of embarcation, etc) outputs whether or not he
-survived. Furthermore, it's a classification problem since the label column
-(Survived) can have a finite number of values: 1 if the passenger survived or 0
-if the passenger didn't.
+You might have guessed that this is a supervised learning problem, because we
+can view it as building a function that, given all the information available on
+a passenger (for example, fare, sex, port of embarcation) outputs whether or not
+the passenger survived. Furthermore, it's a classification problem because the
+label column (Survived) can have a finite number of values: 1 if the passenger
+survived or 0 if the passenger didn't.
 
 == Our first machine learning pipeline
 
-The machine learning library bundled with Spark comes with a wide range of
-classification algorithms to pick from. As a result, we'll be able to solve our
-problem quite easily.
+The machine learning library bundled with Spark (Spark ML) comes with a wide
+range of classification algorithms to pick from. As a result, we'll be able to
+solve our problem quite easily.
 
 If you want to follow along, start up your REPL!
 
 === Loading the data
 
-To solve our problem we first need to get the contents of our 'train.csv' file
-into a DataFrame. Spark comes with quite a few utilities to read data in
-different formats such as CSV, JSON, Parquet into a DataFrame or Dataset.
+To solve our problem we first need to get the contents of our train.csv file
+into a DataFrame. Spark comes with utilities to read data in different formats
+such as CSV, JSON, Parquet into a DataFrame or Dataset.
 
-For the next part, we're going to assume that your 'train.csv' file is located
-at '/data/train.csv' (listing 2.1):
+For the next part, we're going to assume that your train.csv file is located
+at /data/train.csv. Run the code in listing 2.1 to load the training data into
+a DataFrame:
 
-.Loading our training data into a DataFrame using the SparkSession made available in the REPL
+.Loading our training data into a DataFrame using the SparkSession made available in the REPL.
 [source,scala]
 ----
 val trainFilePath = "/data/train.csv"
 val titanicTrain = spark
-  .read                          // <1>
-  .format("csv")                 // <2>
-  .option("header", "true")      // <3>
-  .option("inferSchema", "true") // <4>
-  .load(trainFilePath)           // <5>
-  .cache()                       // <6>
+  .read
+  .format("csv")                 // <1>
+  .option("header", "true")      // <2>
+  .option("inferSchema", "true") // <3>
+  .load(trainFilePath)           // <4>
+  .cache()                       // <5>
 ----
-<1> We want to read data, as opposed to writing.
-<2> As we previously saw, the data is in CSV format.
-<3> We specify that the first line doesn't contain an observation but the names
+<1> As we previously saw, the data is in CSV format.
+<2> We specify that the first line doesn't contain an observation but the names
 of each column.
-<4> We tell Spark we want it to try to infer the type for every column, if we
+<3> We tell Spark we want it to try to infer the type for every column, if we
 don't, it will default to typing every column as a string.
-<5> We trigger the loading of the DataFrame giving the path where the file is
-located.
-<6> Since we'll be reusing this DataFrame quite a lot to do various operations
+<4> Triggers the loading of the DataFrame.
+<5> Because we'll be reusing this DataFrame quite a lot to do various operations
 it's always a good idea to cache it for performance reasons. This will tell
 Spark to store the DataFrame as deserialized Java objects in the JVM. If it's
-too big to fit in the JVM allocated memory, it will spill to disk.
+too big to fit in the JVM's allocated memory, it will spill to disk.
 
 Now that we turned our data into a DataFrame, let's see what's inside.
 
 === Grasping the data
 
-You can have a look at the schema of the data by calling printSchema() on the
-DataFrame (listing 2.2):
+You can look at the schema of the data by calling printSchema() on the
+DataFrame (listing 2.2).
 
-.Displaying the schema of the titanicTrain DataFrame
+.Displaying the schema of the titanicTrain DataFrame.
 [source,scala]
 ----
 titanicTrain.printSchema()
@@ -146,17 +145,17 @@ As you can see the schema of our DataFrame fits what was in the original file
 and each column's type has been correctly inferred.
 
 We can also find out what the first few rows look like by calling show on the
-DataFrame in listing 2.3:
+DataFrame in listing 2.3.
 
-.Peeking what the first 5 rows of our titanicTrain DataFrame look like
+.Peeking at the first 5 rows of our titanicTrain DataFrame look like.
 [source,scala]
 ----
 titanicTrain.show(5)
 ----
 
-You should get something along the lines of table 2.1:
+Your result should be something along the lines of table 2.1.
 
-.The first 5 rows of our DataFrame
+.The first 5 rows of our DataFrame.
 [options="header"]
 |===
 |PassengerId|Survived|Pclass|Name|Sex|Age|SibSp|Parch|Ticket|Fare|Cabin|Embarked
@@ -167,16 +166,17 @@ You should get something along the lines of table 2.1:
 |5|0|3|Allen, Mr. Willia...|  male|35.0|0|0|          373450|   8.05|     |S
 |===
 
-Looking only at those few records, do you think every column brings valuable
-information as to whether this specific passenger survived?
+Looking at only those few records, do you think every column brings valuable
+information as to whether these specific passengers survived? Unfortunately no,
+there are useless columns.
 
-Let's look at the Ticket column first. It seems to be made of a cryptic string
-(sometimes) followed by a number which doesn't seem to be normalized (5, 6 or 7
-digits in those observations alone). As a matter of fact, there are 681
+Let's look at the Ticket column first. It seems to contain a cryptic string
+(sometimes) followed by a number that doesn't seem to be normalized (5, 6, or 7
+digits in those observations). As a matter of fact, there are 681
 different ticket numbers for our 891 observations, you can verify that by
-running the code in listing 2.4:
+running the code in listing 2.4.
 
-.Checking the number of distinct tickets
+.Checking the number of distinct tickets.
 [source,scala]
 ----
 titanicTrain
@@ -184,65 +184,77 @@ titanicTrain
   .distinct()       // <2>
   .count()          // <3>
 ----
-<1> We're only interested in the Ticket column.
-<2> We want the distinct ticket numbers.
-<3> We want to count the distinct ticket numbers.
+<1> Use the Ticket column.
+<2> Select the distinct ticket numbers.
+<3> Count the distinct ticket numbers.
 
-As you might have expected, there is (almost) one ticket number per passenger.
-As a result, as is the Ticket column doesn't give any information about a
+As you might have expected, there is almost one ticket number per passenger.
+As a result, the Ticket column doesn't give any information about a
 passenger survivability. However, we might be interested in deciphering what the
 string at the beginning of some tickets means but that's a bit too involved for
 an introduction. Hence, I think it's reasonable to get rid of the Ticket column.
 
 With the same rationale, we can eliminate the PassengerId as well. It's even
-worse in this case since it's an artificial incrementing id which, most likely,
-has been added by Kaggle to evaluate a submission by comparing what we predicted
-(survival or death) to what really happened for each passenger (identified by
-its id).
+worse in this case because it's an artificial incrementing id, which, most
+likely, has been added by Kaggle to evaluate a submission by comparing what we
+predicted (survival or death) to what really happened for each passenger
+(identified by its id).
 
-Next, the Cabin column: it seems to be composed of the character C followed by
-a number, it also appears that it hasn't been filled out for a lot of passengers
-(3 out of 5 for this particular sample). We can verify our intuition by
-computing the number of observations for which the Cabin column contains an
-empty string (listing 2.5):
+Next, let's look at the Cabin column. It seems to contain the character C
+followed by a number; it also appears that it hasn't been filled out for a lot
+of passengers (three out of five for this particular sample). We can verify our
+intuition by computing the number of observations for which the Cabin column
+contains an empty string by running the code in listing 2.5.
 
-.Computing the number of observations for which the Cabin column is empty
+.Computing the number of observations for which the Cabin column is empty.
 [source,scala]
 ----
 titanicTrain
   .where($"Cabin" === "") // <1>
   .count()                // <2>
 ----
-<1> We're only interested in the records where the Cabin column is empty.
-<2> We want to count them.
+<1> Filter by the empty string in the Cabin column.
+<2> Count the number of records.
 
-This gives us 687: almost 4 out of 5 observations. Consequently, we'll remove
-this feature from consideration because an empty string in 80% of the passengers
-doesn't tell us much about whether or not the passenger survived.
+This gives us 687. Almost four out of five observations. Consequently, we'll
+remove this feature from consideration because an empty string in 80% of the
+passengers doesn't tell us much about whether or not the passenger survived.
 
 If we follow the same reasoning we applied for the Ticket column, the raw Name
-doesn't give us any information about the passenger's survival since there are
-as much names as there are passengers (unexpected I know). A more careful
-analysis might want to parse the Name column in order to extract the title of
-the passenger like Mr. or Miss. but there are also, among others, doctors (Dr.)
-and colonels (Col.) which might give an idea of the status of the passenger
-which might, in turn, influence her / his survivability (e.g. a doctor might be
-likelier to survive than a simple gentleman).
+data doesn't give us any information about the passenger's survival because
+there are as many names as there are passengers (unexpected, I know). A more
+careful analysis may parse the Name column to extract the title of the passenger
+like Mr. or Miss. but there are also, among others, doctors (Dr.) and colonels
+(Col.), which might give an idea of the status of the passenger and which might,
+in turn, influence survivability (that is, a doctor might be likelier to survive
+than a simple gentleman).
 
-We're left with 7 features: Pclass, Sex, Age, SibSp, Parch, Fare and Embarked
-and our label column Survived.
+We're left with seven features: Pclass, Sex, Age, SibSp, Parch, Fare, and
+Embarked and our label column Survived as shown in table 2.2.
 
-=== Filling up the blanks
+.The first 5 rows with only the columns we're going to consider for further analysis.
+[options="header"]
+|===
+|Survived|Pclass|Sex|Age|SibSp|Parch|Fare|Embarked
+|0|3|  male|22.0|1|0|    7.25|S
+|1|1|female|38.0|1|0| 71.2833|C
+|1|3|female|26.0|0|0|   7.925|S
+|1|1|female|35.0|1|0|    53.1|S
+|0|3|  male|35.0|0|0|    8.05|S
+|===
+
+=== Filling in the blanks
 
 Focusing on the columns we're actually going to consider to build our model,
 it's good practice to do some sanity checks on each of them. Given that, we only
-have 7, it's totally manageable to do it "by hand".
+have seven, it's totally manageable to do it "by hand."
 
 Let's start with the Pclass (passenger class) feature. From the description of
-the dataset, we expect 3 different values (1 to 3). Let's see if we're in the
-right by looking at the unique values the Pclass column can take (listing 2.6):
+the dataset, we expect three different values (1 to 3). Let's see if we're on
+the right track by looking at the unique values the Pclass column can take
+(listing 2.6).
 
-.Checking the distinct values the Pclass column can take
+.Checking the distinct values the Pclass column can take.
 [source,scala]
 ----
 titanicTrain
@@ -254,21 +266,35 @@ titanicTrain
 <2> We want to check the unique values the column takes.
 <3> We want Spark to show them to us.
 
-We get the expected result, let's move on to another feature: Sex. By running
-the exact same query on the Sex column, we retrieve the results we expected:
-female and male. We proceed in the same way to validate the SibSp and Parch
-columns, nothing seems to be out of the ordinary for those columns either.
+We get the expected result (1 to 3) in table 2.3.
 
-We're left with two columns to investigate: Fare and Age. However, since age and
-fare are continous variables they can take an infinite number of values which
-means we're not gonna be able to apply the same techniques. Fortunately, there
-is a nice `describe()` method which can give a lot of useful information for a
-particular continous variable such as its number of non-null entries, its
-minimum, mean and maximum values as well as its standard deviation.
+.The distinct values in the Pclass column.
+[options="header"]
+|===
+|Pclass
+|3
+|1
+|2
+|===
 
-Let's see what calling `describe()` on the Fare columns gives us in listing 2.7:
+Let's move on to another feature: Sex. By running the exact same query on the
+Sex column, we retrieve the results we expected: female and male. When we
+proceed in the same way to validate the SibSp and Parch columns, nothing seems
+to be out of the ordinary for those columns either.
 
-.Calling describe on the Fare column gives us summary statistics
+This leaves us with two columns to investigate. Fare and Age. However, because
+age and
+fare are continuous variables, they can take an infinite number of values, which
+means we're not going to be able to apply the same techniques. Fortunately,
+there is a `describe()` method on the Dataset class that can produce a lot of
+useful information for a specified continuous variable, such as the number of
+non-null entries, its minimum, mean, and maximum values as well as its standard
+deviation.
+
+Let's see what calling the `describe()` method on the Fare columns gives us when
+we run it, as shown in listing 2.7:
+
+.Calling the describe method on the Fare column gives us summary statistics.
 ----
 titanicTrain
   .describe("Fare") // <1>
@@ -277,9 +303,9 @@ titanicTrain
 <1> We're interested in knowing the summary statistics about the Fare column.
 <2> We want Spark to show us the results.
 
-You should get a Dataset containing the information in table 2.2:
+The query should return a Dataset containing the information in table 2.4.
 
-.Results of calling describe on the Fare column
+.Results of calling the describe method on the Fare column.
 [options="header"]
 |===
 |summary|             Fare
@@ -291,37 +317,39 @@ You should get a Dataset containing the information in table 2.2:
 |===
 
 We can find the number of rows in the dataset for which the Fare is not null in
-the first row (count). Since the dataset contains 891 observations, there are no
-null fares.
+the first row (count). Because the dataset contains 891 observations, there are
+no null fares.
 
-Next, we can see the average Fare which is around 32$ which seems fair.
+Next, we can see the average Fare, which is around $32 which seems fair.
 
-Minimum Fare is 0$ which might be some default value if we don't know what this
+Minimum Fare is $0 which might be some default value if we don't know what this
 passenger paid to get onboard. Another hypothesis might be that the ones who
-paid 0$ were the crew members but, since the dataset only contains passengers,
-we can dismiss it. Plus since it concerns only 15 people we won't give it much
-more attention. A more involved analysis might concern itself with this kind of
-issue.
+paid $0 were the crew members but because the dataset only contains passengers,
+we can dismiss it. Plus, because it concerns only 15 people we won't give it
+much more attention. How did we arrive at 15? This is given as an exercise. A
+more involved analysis might concern itself with this kind of issue.
 
-At the other end of the spectrum, the maximum Fare is 512$. Here as well, it
-appears to be some kind of mistake since the second highest are in the 200$
-range. Since there are only 3 people who might have paid 512$, we won't dig
-deeper.
+At the other end of the spectrum, the maximum Fare is $512. Here as well, it
+appears to be some kind of mistake since the second highest fares are in the
+$200 range. Because there are only three people who might have paid $512, we
+won't dig deeper. Here as well, try to figure out how we arrived at those
+numbers.
 
-Finally, the standard deviation, which, as a reminder, represents the average
+Finally, the standard deviation - which, as a reminder, represents the average
 distance between the Fare for a particular observation and the mean Fare
-(\~32$) is almost 50$ which indicates a skew towards higher fares with certainly
-quite a few outliers in the high price ranges influencing the standard deviation
-heavily.
+($32) - is almost $50 which indicates a skew toward higher fares with certainly
+quite a few outliers in the high price ranges, influencing the standard
+deviation heavily as we've just seen.
 
-Even though we have identified a few problems with the Fare column we won't do
+Even though we have identified a few problems with the Fare column, we won't do
 much but it's always a good idea to deepen your understanding of a dataset
 before actually using it.
 
-We're left with the Age column, if we use the `describe()` method to get a
-better understanding of what's going on with this variable, we obtain table 2.3:
+We're left with the Age column: if we use the `describe()` method to get a
+better understanding of what's going on with this variable, we obtain the output
+shown in table 2.5.
 
-.Results of calling describe on the Age column
+.Results of calling the describe method on the Age column.
 [options="header"]
 |===
 |summary|               Age
@@ -332,21 +360,21 @@ better understanding of what's going on with this variable, we obtain table 2.3:
 |    max|              80.0
 |===
 
-Every statistic seems to be plausible. However we do have a problem with the
-number of non-null values which is 714 which is below the number of observations
-(891) by quite a great margin (177). This effectively means that 1 out of every
-5 passengers doesn't have an age filled out in the dataset. To remedy this
-issue, we'll impute a value for the ones that are missing. There exists a few
-simple strategies to decide what value to impute: the mean, the median, or the
-most frequent (usually used for categorical features). Here, we use the mean
-which is already in the summary made by the `describe()` method: approximately
-29.7 years.
+Every statistic in this result set seems to be plausible. However, we do have a
+problem with the number of non-null values; 714 is below the number of
+observations (891) by quite a great margin (177). This effectively means that
+one of every five passengers doesn't have an age filled out in the dataset. To
+remedy this issue, we'll impute a value for the ones that are missing. There are
+a few simple strategies to decide what value to impute. The mean, the median,
+or the most frequent (usually used for categorical features). Here, we use the
+mean which is already in the summary produced by the `describe()` method
+(approximately 29.7 years).
 
 Spark SQL defines two strategies to deal with rows containing null values:
 either drop them or replace them by another value. The latter fits our need
-perfectly (listing 2.8):
+perfectly and we'll use it in listing 2.8.
 
-.Replacing null values in the Age column by the column average: 29.7 years
+.Replacing null values in the Age column with the column average, 29.7 years.
 [source,scala]
 ----
 val imputedTrainMap = Map("Age" -> 29.7d)   // <1>
@@ -360,24 +388,24 @@ our case we want to replace null values in the Age column by 29.7.
 <3> We use the `fill()` method in order to replace missing values according to
 our previously defined map.
 
-Our dataset is finally fit to use, we're ready to build our pipeline!
+Our dataset is finally fit to use. We're ready to build our pipeline!
 
 === Indexing categorical features
 
-Usually, the first components in our Pipeline will be Transformers and
+Usually, the first components in our pipeline will be Transformers and
 Estimators used to fit the data to the format expected by the algorithm we're
 using. One such formatting requirements for the algorithm we're going to use is
-that every feature should be numerical (no strings allowed) and since we have a
-couple of columns containing strings, namely Sex and Embarked, we will have to
+that every feature should be numerical (no strings allowed) and because we have
+a couple of columns containing strings, namely Sex and Embarked, we will have to
 transform those into numerical columns.
 
-Fortunately, there exists an Estimator for this use case: StringIndexer.
-It simply adds a column to an existing DataFrame indexing a column containing
-string values. The most frequent values will get the smallest indices. As an
-example, consider the DataFrame in table 2.4 which could be a subset of the
-Titanic one:
+Fortunately, there is an Estimator for this use case. StringIndexer. It simply
+adds a column to an existing DataFrame, indexing a column containing string
+values. The most frequent values will get the smallest indices. As an example,
+consider the DataFrame in table 2.6, which could be a subset of the Titanic
+values.
 
-.Example DataFrame containing a single Sex column
+.Example DataFrame containing a single Sex column.
 [options="header"]
 |===
 |Sex
@@ -389,10 +417,10 @@ Titanic one:
 |===
 
 We have 3 females and 2 males. Thus, if we apply a StringIndexer on the Sex
-column we obtain the following DataFrame with female getting the 0 index since
-it's the most frequent and male getting the 1 index (table 2.5).
+column, we obtain the following DataFrame with female getting the 0 index
+because it's the most frequent and male getting the 1 index (table 2.7).
 
-.Resulting DataFrame after applying a StringIndexer on the Sex column
+.Resulting DataFrame after applying a StringIndexer on the Sex column.
 [options="header"]
 |===
 |Sex|SexAfterStringIndexer
@@ -404,9 +432,10 @@ it's the most frequent and male getting the 1 index (table 2.5).
 |===
 
 Now that we understand how a StringIndexer works, we can create one for each
-of our problematic columns (Sex and Emabrked) in listing 2.9:
+of our problematic columns (Sex and Embarked) by running the code in listing
+2.9.
 
-.Creating two StringIndexers: one for the Sex column and one for the Embarked column
+.Creating two StringIndexers: one for the Sex column and one for the Embarked column.
 [source,scala]
 ----
 import org.apache.spark.ml.feature.StringIndexer
@@ -427,17 +456,17 @@ StringIndexer.
 
 === Assembling the useful features
 
-Another requirement we have to face, which is valid for every machine learning
-algorithm in Spark ML, is that all the features have to be squashed together
-into a single column containing a numeric vector. Here as well, there is a
-Transformer which was built for this purpose: VectorAssembler.
+Another requirement, which is valid for every machine learning algorithm in
+Spark ML, is that all the features have to be squashed together into a single
+column containing a numeric vector. There is a Transformer that was built for
+this purpose: VectorAssembler.
 
-It adds a column to an existing DataFrame containing a vector being the
-concateantion of the values from the specified columns.
+It adds a column to an existing DataFrame containing a vector, being the
+concatenation of the values from the specified columns.
 
-For instance, let's consider the synthetic DataFrame in table 2.6:
+As an example, let's consider the synthetic DataFrame in table 2.8.
 
-.DataFrame containing an Age and a Fare column
+.DataFrame containing an Age and a Fare column.
 [options="header"]
 |===
 |Age|Fare
@@ -449,9 +478,9 @@ For instance, let's consider the synthetic DataFrame in table 2.6:
 |===
 
 If we were to apply a VectorAssembler with Age and Fare as input columns, we
-would obtain table 2.7:
+would obtain table 2.9.
 
-.Resulting DataFrame after applying a VectorAssembler on the Age and Fare columns
+.Resulting DataFrame after applying a VectorAssembler on the Age and Fare columns.
 [options="header"]
 |===
 |Age|Fare|OutputOfAssembler
@@ -462,7 +491,7 @@ would obtain table 2.7:
 |35.0| 8.05|[35.0, 8.05]
 |===
 
-Let's define the VectorAssembler we need (listing 2.10). As a reminder, we
+Let's define the VectorAssembler we need in listing 2.10. As a reminder, we
 previously selected the following features: Sex, Embarked, Age, SibSp, Parch,
 Fare, Pclass.
 
@@ -513,7 +542,7 @@ We're now ready to build our Pipeline which will be tying all the components
 we just defined together: StringIndexers, VectorAssembler and
 DecisionTreeClassifier (listing 2.12).
 
-.Creating our Pipeline
+.Creating our Pipeline.
 [source,scala]
 ----
 import org.apache.spark.ml.Pipeline
@@ -521,11 +550,11 @@ val pipeline = new Pipieline()
   .setStages((indexers :+ assembler :+ decisionTree).toArray) // <1>
 ----
 <1> setStages will let us specify the ordering of the components: indexers comes
-before assembler since the VectorAssembler assembles the indexed columns and
-decisionTree comes last since it uses the output of the VectorAssembler.
+before assembler because the VectorAssembler assembles the indexed columns and
+decisionTree comes last because it uses the output of the VectorAssembler.
 
-If you remember correctly from chapter 1, a Pipeline is an Estimator and calling
-the `fit()` method on it actually triggers the indexing, assembling and learning
+If you remember from chapter 1, a Pipeline is an Estimator and calling the
+`fit()` method on it actually triggers the indexing, assembling, and learning
 of the algorithm that are contained in the Pipeline. This produces a Transformer
 capable of adding a column to a Dataset with the predictions given by the
 algorithm or, in other words, a machine learning model.
@@ -533,9 +562,11 @@ algorithm or, in other words, a machine learning model.
 However, there is still a small requirement we're not meeting: every machine
 learning algorithm in Spark ML needs the label column to contain doubles. As is,
 the label column (Survived) contains integers as indicated by the
-`printSchema()` method on imputedTitanicTrain in listing 2.13.
+`printSchema()` method we used at the beginning of the chapter (listing 2.2).
+To remedy this, we're going to cast our Survived column to double in listing
+2.13.
 
-.Casting the Survived column to double
+.Casting the Survived column to double.
 [source,scala]
 ----
 import org.apache.spark.sql.types.DoubleType
@@ -558,7 +589,7 @@ We now have a Transformer ready to be used to make predictions on the test
 dataset.
 
 A schema of the pipeline can be seen in figure 2.2 as well as the hoops the
-`castedTitanicTrain` went through:
+`castedTitanicTrain` went through.
 
 .Walkthrough of calling the fit method on the Pipeline
 image::../images/chap2_fit.png[]
@@ -566,20 +597,21 @@ image::../images/chap2_fit.png[]
 == Solving the Kaggle challenge
 
 In this section, we'll use the previously built machine learning model to
-complete the Kaggle challenge:
+complete the Kaggle challenge by doing the following.
 
-- Load the contents of the 'test.csv' file
-- Make survival predictions for those passengers
-- Format our predictions according to the requirements from Kaggle
-- Write it to a CSV file
-- Submit it on the kaggle.com website
+- Loading the contents of the 'test.csv' file
+- Making survival predictions for those passengers
+- Formatting our predictions according to the requirements from Kaggle
+- Writing it to a CSV file
+- Submitting it on the kaggle.com website
 
 === Loading the test data
 
-We load the test data in the same way we loaded the training data, assuming it's
-located at '/data/test.csv' (listing 2.15):
+We load the test data in the same way we loaded the training data, using the
+default path '/data/test.csv' in listing 2.15. Feel free to replace it by the
+location of your file.
 
-.Loading our test data into a DataFrame using the SparkSession made available in the REPL
+.Loading our test data into a DataFrame using the SparkSession made available in the REPL.
 [source,scala]
 ----
 val testFilePath = "/data/test.csv"
@@ -592,17 +624,19 @@ val titanicTest = spark
   .cache()
 ----
 
-This is the exact same sequence of methods we used for the training data so we
-won't go in-depth.
+This is the same sequence of methods we used for the training data, so we
+won't discuss it in-depth.
 
-You'll notice that this DataFrame has the exact same schema compared to
-titanicTrain except for the Survived column which is missing from this one.
+We note, through the usage of the `printSchema()` method, that this DataFrame
+has the same schema compared with titanicTrain except for the Survived
+column, which is missing from this one. This is obviously because it is our job
+to predict it!
 
 In the same way we had rows without Age in the training dataset, we have some
 also in the test dataset. However, in this dataset, we have one row without
-Fare which you can see with what's in listing 2.16:
+Fare, which you can see with the code in listing 2.16.
 
-.Obtaining the row without Fare in the test DataFrame
+.Obtaining the row without Fare in the test DataFrame.
 [source,scala]
 ----
 titanicTest
@@ -615,10 +649,10 @@ titanicTest
 As a result, we have to provide a default Fare value for this Dataset in
 addition to the one for the Age column. If we go back to our investigation of
 the Fare column, we had determined that the average fare for the training
-dataset was approximately 32.20$. We use this value in the row missing a Fare
-value (listing 2.17):
+dataset was approximately $32.20. We use this value in the row missing a Fare
+value (listing 2.17).
 
-.Replacing null values in the Age and Fare column in the test DataFrame
+.Replacing null values in the Age and Fare column in the test DataFrame.
 [source,scala]
 ----
 val imputedTestMap = imputedTrainMap + ("Fare" -> 32.2d) // <1>
@@ -633,8 +667,9 @@ replacement value for the Fare column.
 
 === Making predictions
 
-Since our test DataFrame doesn't contain null values anymore, we can safely use
-the model we built in the preceding section to make predictions (listing 2.18).
+Beucase our test DataFrame doesn't contain any null values anymore, we can
+safely use the model we built in the preceding section to make predictions
+with listing 2.18.
 
 .Using the model to make predictions on the imputedTitanicTest DataFrame
 [source,scala]
@@ -645,31 +680,31 @@ val predictions = model.transform(imputedTitanicTest) // <1>
 it. It adds predictions to the DataFrame.
 
 Essentially, we can sum up the path traveled by the `imputedTitanicTest` with
-figure 2.3:
+figure 2.3.
 
-.Result of calling the `transform()` method
-image::../images/sample_titanic.png[]
+.Result of calling the `transform()` method.
+image::../images/chap2_transform.png[]
 
 If you inspect the schema of the predictions Dataset, you'll see that the model
-Transformer added 3 columns (excluding the ones created by the StringIndexers
-and the VectorAssembler):
+Transformer added three columns (excluding the ones created by the
+StringIndexers and the VectorAssembler):
 
-- rawPrediction which contains a vector of length 2 (one element for each class
-in our problem: did not survive and survived). The values inside this vector
-corresponds to a score produced by the algorithm. Since we're treating our
-classification algorithm as a black box, we won't explain what those values
+- _rawPrediction_ which contains a vector of length 2 (one element for each
+class in our problem: did not survive and survived). The values inside this
+vector corresponds to a score produced by the algorithm. Because we're treating
+our classification algorithm as a black box, we won't explain what those values
 mean. Just know the highest value's index will be the predicted label. For
-instance, if we have \[361.0, 41.0\], the label 0 (didn't survive) will be
+example, if we have [361.0, 41.0], the label 0 (didn't survive) will be
 predicted.
-- probability which also contains a vector of length 2 (one element for each
+- _probability_ which also contains a vector of length 2 (one element for each
 class) containing the probability of each predicted label. It is a normalization
 of the rawPrediction column according to a probability distribution (here
 multinomial). In practice, if we take back our example content in the
-rawPrediction column \[361.0, 41.0\], the content of the probability column
-can be computed as \[361.0 / (361.0 + 41.0), 41.0 / (361.0 + 41.0)\] \~=
-\[0.90, 0.10\].
-- Last but not least the prediction column which contains the predicted label: 0
-if the algorithm classified the passenger as not a survivor and 1 otherwise.
+rawPrediction column [361.0, 41.0], the content of the probability column
+can be computed as [361.0 / (361.0 + 41.0), 41.0 / (361.0 + 41.0)] =
+[0.90, 0.10].
+- Last but not least the _prediction_ column which contains the predicted label:
+0 if the algorithm classified the passenger as not a survivor and 1 otherwise.
 
 For our particular problem, only the prediction column is useful.
 
@@ -682,14 +717,14 @@ We can now write our predictions to a CSV file following Kaggle's requirements.
 Our file should contain only two columns: PassengerId and Survived (our
 predictions).
 
-Remember however that algorithms inside Spark ML know how to deal with only
+Remember, however, that algorithms inside Spark ML know how to deal with only
 double labels and Kaggle expects our Survived column to contain integers (0 for
-death, 1 for survival). As a result, we'll have to cast back our double
-predictions to integers.
+death, 1 for survival). As a result, we'll have to cast our double predictions
+back to integers.
 
 In listing 2.19, we write our result to the '/data/result.csv' path.
 
-.Writing our predictions according to Kaggle's formatting guidelines
+.Writing our predictions according to Kaggle's formatting guidelines.
 [source,scala]
 ----
 import org.apache.spark.sql.types.IntegerType
@@ -711,19 +746,19 @@ in a single partition so only a single file is created.
 <5> We also comply to the first line containing headers requirement.
 <6> save will actually trigger the writing.
 
-After running this piece of code you should get two files in the
-'/data/result.csv/' folder:
+After running this piece of code you should have two files in the
+/data/result.csv/ folder.
 
 - An empty file named _SUCCESS indicating that the operation was a success
 - A file with the actual content named
-part-r-[0-9]\{5\}-deadbeef-dead-beef-dead-beef-dead-beef.csv which is a naming
+part-r-[0-9]\{5\}-deadbeef-dead-beef-dead-beef-dead-beef.csv, which is a naming
 convention inherited from Hadoop. It contains the id of the partition (in our
 case 0) and a random universally unique identifier (UUID).
 
 If you look at the beginning of the part file you should see something like
-table 2.8:
+table 2.10.
 
-.The first 5 lines of the part file
+.The first 5 lines of the part file.
 [options="header"]
 |===
 |PassengerId|Survived
@@ -734,15 +769,15 @@ table 2.8:
 |896|1
 |===
 
-Which fits what Kaggle expects.
+The data in this table fits what Kaggle expects!
 
 === Submit
 
-We're ready to submit the file, head over to
+We're ready to submit the file: head over to
 https://www.kaggle.com/c/titanic/submit (you need to create an account to
 submit your solution for evaluation) and submit your CSV file.
 
-I got a score of 0.79 which you should get too approximately.
+I got a score of 0.79 which should be approximately what you get too.
 
 == Summary
 
@@ -759,6 +794,8 @@ Most importantly, we have had the chance to express fairly complex ideas like
 solving a classification problem in very simple terms which is where lies the
 value of the Spark ML library.
 
+== Exercises
+
 Can you beat the 0.79 score we got?
 
 One thing we could try is to change the algorithm we used for another
@@ -769,9 +806,9 @@ http://spark.apache.org/docs/latest/ml-classification-regression.html#classifica
 We also could enrich our initial dataset by adding features to it. One simple
 feature to add would be the family size of each passenger. Knowing that you
 can add a feature NewFeat sum of two existing features Feat1 and Feat2 like
-in listing 2.20:
+in listing 2.20.
 
-.Creating a new column sum of two existing ones in a DataFrame
+.Creating a new column sum of two existing ones in a DataFrame.
 [source,scala]
 ----
 val newDataFrame = oldDataFrame.withColumn("NewFeat", $"Feat1" + $"Feat2")
@@ -796,8 +833,8 @@ titanicTrain.count() == titanicTrain.select("Name").distinct().count()
 ----
 
 Suppose that, to satisfy you curiosity, you want to know how many passengers
-supposedly paid 0$ (since we have no way of knowing if they actually paid 0$ or
-if there is a mistake in the dataset).
+supposedly paid $0 (because we have no way of knowing if they actually paid $0
+or if there is a mistake in the dataset).
 
 .Answer
 [source,scala]
@@ -805,7 +842,22 @@ if there is a mistake in the dataset).
 titanicTrain.where($"Fare" === 0).count()
 ----
 
+In the same vein, how would you go about finding the five people who paid the
+most?
+
+.Answer
+[source,scala]
+----
+titanicTrain
+  .select("Fare")
+  .orderBy($"Fare".desc)
+  .show(5)
+----
+
 Can you think of an algorithm to extract the title from the Name column?
 
 That's it for chapter 2 which, I hope, gave you a glimpse of the power of the
 Spark ML API.
+
+In the next chapter, we'll get to know the data we'll be working with for the
+rest of the book: the GitHub archive.
