@@ -282,6 +282,50 @@ Sex column, we retrieve the results we expected: female and male. When we
 proceed in the same way to validate the SibSp and Parch columns, nothing seems
 to be out of the ordinary for those columns either.
 
+Next the Embarked feature, if we run the same code however we find what's in
+table 2.4.
+
+.The distinct values in the Embarked column.
+[options="header"]
+|===
+|Embarked
+|Q
+|null
+|C
+|S
+|===
+
+We notice that there are rows where the column Embarked is null. Because Spark
+ML doesn't allow null values, we'll have to replace them. We'll do so by
+replacing null in the Embarked column by the most frequent value in this
+column which can be found with the help of the code in listing 2.7.
+
+.Finding the most frequent Embarked value.
+[source,scala]
+----
+titanicTrain
+  .select("Embarked")
+  .groupBy("Embarked")
+  .count()
+  .show()
+----
+
+The output of this code can be viewed in table 2.5.
+
+.The number of occurrences of each value in the Embarked column.
+[options="header"]
+|===
+|Embarked|count
+|Q|77
+|null|2
+|C|168
+|S|644
+|===
+
+We can see that more than 70% of the passengers embarked in the Southampton
+port. As a result, we'll assume that the two passengers for which we don't
+know their departure port embarked in Southampton.
+
 This leaves us with two columns to investigate. Fare and Age. However, because
 age and
 fare are continuous variables, they can take an infinite number of values, which
@@ -292,9 +336,10 @@ non-null entries, its minimum, mean, and maximum values as well as its standard
 deviation.
 
 Let's see what calling the `describe()` method on the Fare columns gives us when
-we run it, as shown in listing 2.7:
+we run it, as shown in listing 2.8.
 
 .Calling the describe method on the Fare column gives us summary statistics.
+[source,scala]
 ----
 titanicTrain
   .describe("Fare") // <1>
@@ -303,7 +348,7 @@ titanicTrain
 <1> We're interested in knowing the summary statistics about the Fare column.
 <2> We want Spark to show us the results.
 
-The query should return a Dataset containing the information in table 2.4.
+The query should return a Dataset containing the information in table 2.6.
 
 .Results of calling the describe method on the Fare column.
 [options="header"]
@@ -347,7 +392,7 @@ before actually using it.
 
 We're left with the Age column: if we use the `describe()` method to get a
 better understanding of what's going on with this variable, we obtain the output
-shown in table 2.5.
+shown in table 2.7.
 
 .Results of calling the describe method on the Age column.
 [options="header"]
@@ -372,18 +417,19 @@ mean which is already in the summary produced by the `describe()` method
 
 Spark SQL defines two strategies to deal with rows containing null values:
 either drop them or replace them by another value. The latter fits our need
-perfectly and we'll use it in listing 2.8.
+perfectly and we'll use it in listing 2.9.
 
 .Replacing null values in the Age column with the column average, 29.7 years.
 [source,scala]
 ----
-val imputedTrainMap = Map("Age" -> 29.7d)   // <1>
+val imputedTrainMap = Map[String, Any]("Age" -> 29.7d, "Embarked" -> "S") // <1>
 val imputedTitanicTrain = titanicTrain
-  .na                                       // <2>
-  .fill(imputedTrainMap)                    // <3>
+  .na                                                                     // <2>
+  .fill(imputedTrainMap)                                                  // <3>
 ----
 <1> We define a map which contains the values we want to use for each column. In
-our case we want to replace null values in the Age column by 29.7.
+our case we want to replace null values in the Age column by 29.7 and null
+values in the Embarked column by S for Southampton.
 <2> na lets us access functions to work with missing data in our DataFrame.
 <3> We use the `fill()` method in order to replace missing values according to
 our previously defined map.
@@ -402,7 +448,7 @@ transform those into numerical columns.
 Fortunately, there is an Estimator for this use case. StringIndexer. It simply
 adds a column to an existing DataFrame, indexing a column containing string
 values. The most frequent values will get the smallest indices. As an example,
-consider the DataFrame in table 2.6, which could be a subset of the Titanic
+consider the DataFrame in table 2.8, which could be a subset of the Titanic
 values.
 
 .Example DataFrame containing a single Sex column.
@@ -418,7 +464,7 @@ values.
 
 We have 3 females and 2 males. Thus, if we apply a StringIndexer on the Sex
 column, we obtain the following DataFrame with female getting the 0 index
-because it's the most frequent and male getting the 1 index (table 2.7).
+because it's the most frequent and male getting the 1 index (table 2.9).
 
 .Resulting DataFrame after applying a StringIndexer on the Sex column.
 [options="header"]
@@ -433,7 +479,7 @@ because it's the most frequent and male getting the 1 index (table 2.7).
 
 Now that we understand how a StringIndexer works, we can create one for each
 of our problematic columns (Sex and Embarked) by running the code in listing
-2.9.
+2.10.
 
 .Creating two StringIndexers: one for the Sex column and one for the Embarked column.
 [source,scala]
@@ -464,7 +510,7 @@ this purpose: VectorAssembler.
 It adds a column to an existing DataFrame containing a vector, being the
 concatenation of the values from the specified columns.
 
-As an example, let's consider the synthetic DataFrame in table 2.8.
+As an example, let's consider the synthetic DataFrame in table 2.10.
 
 .DataFrame containing an Age and a Fare column.
 [options="header"]
@@ -478,7 +524,7 @@ As an example, let's consider the synthetic DataFrame in table 2.8.
 |===
 
 If we were to apply a VectorAssembler with Age and Fare as input columns, we
-would obtain table 2.9.
+would obtain table 2.11.
 
 .Resulting DataFrame after applying a VectorAssembler on the Age and Fare columns.
 [options="header"]
@@ -491,7 +537,7 @@ would obtain table 2.9.
 |35.0| 8.05|[35.0, 8.05]
 |===
 
-Let's define the VectorAssembler we need in listing 2.10. As a reminder, we
+Let's define the VectorAssembler we need in listing 2.11. As a reminder, we
 previously selected the following features: Sex, Embarked, Age, SibSp, Parch,
 Fare, Pclass.
 
@@ -518,7 +564,7 @@ VectorAssembler.
 Now that our data is ready to be fed into a classification algorithm, we can
 pick one. For now, consider the chosen algorithm (decision tree) as a black box
 Estimator that can make survival predictions from our features. We'll learn what
-a decision tree is and how it works in chapter 4 (listing 2.11).
+a decision tree is and how it works in chapter 4 (listing 2.12).
 
 .Instantiating our classifier
 [source,scala]
@@ -540,7 +586,7 @@ column.
 
 We're now ready to build our Pipeline which will be tying all the components
 we just defined together: StringIndexers, VectorAssembler and
-DecisionTreeClassifier (listing 2.12).
+DecisionTreeClassifier (listing 2.13).
 
 .Creating our Pipeline.
 [source,scala]
@@ -564,7 +610,7 @@ learning algorithm in Spark ML needs the label column to contain doubles. As is,
 the label column (Survived) contains integers as indicated by the
 `printSchema()` method we used at the beginning of the chapter (listing 2.2).
 To remedy this, we're going to cast our Survived column to double in listing
-2.13.
+2.14.
 
 .Casting the Survived column to double.
 [source,scala]
@@ -577,7 +623,7 @@ val castedTitanicTrain = imputedTitanicTrain
 Survived column to double.
 
 We're ready to fit our pipeline and build our machine learning model (listing
-2.14).
+2.15).
 
 .Building our machine learning model
 [source,scala]
@@ -608,7 +654,7 @@ complete the Kaggle challenge by doing the following.
 === Loading the test data
 
 We load the test data in the same way we loaded the training data, using the
-default path '/data/test.csv' in listing 2.15. Feel free to replace it by the
+default path '/data/test.csv' in listing 2.16. Feel free to replace it by the
 location of your file.
 
 .Loading our test data into a DataFrame using the SparkSession made available in the REPL.
@@ -634,7 +680,7 @@ to predict it!
 
 In the same way we had rows without Age in the training dataset, we have some
 also in the test dataset. However, in this dataset, we have one row without
-Fare, which you can see with the code in listing 2.16.
+Fare, which you can see with the code in listing 2.17.
 
 .Obtaining the row without Fare in the test DataFrame.
 [source,scala]
@@ -650,7 +696,7 @@ As a result, we have to provide a default Fare value for this Dataset in
 addition to the one for the Age column. If we go back to our investigation of
 the Fare column, we had determined that the average fare for the training
 dataset was approximately $32.20. We use this value in the row missing a Fare
-value (listing 2.17).
+value (listing 2.18).
 
 .Replacing null values in the Age and Fare column in the test DataFrame.
 [source,scala]
@@ -669,7 +715,7 @@ replacement value for the Fare column.
 
 Beucase our test DataFrame doesn't contain any null values anymore, we can
 safely use the model we built in the preceding section to make predictions
-with listing 2.18.
+with listing 2.19.
 
 .Using the model to make predictions on the imputedTitanicTest DataFrame
 [source,scala]
@@ -722,7 +768,7 @@ double labels and Kaggle expects our Survived column to contain integers (0 for
 death, 1 for survival). As a result, we'll have to cast our double predictions
 back to integers.
 
-In listing 2.19, we write our result to the '/data/result.csv' path.
+In listing 2.20, we write our result to the '/data/result.csv' path.
 
 .Writing our predictions according to Kaggle's formatting guidelines.
 [source,scala]
@@ -756,7 +802,7 @@ convention inherited from Hadoop. It contains the id of the partition (in our
 case 0) and a random universally unique identifier (UUID).
 
 If you look at the beginning of the part file you should see something like
-table 2.10.
+table 2.12.
 
 .The first 5 lines of the part file.
 [options="header"]
@@ -806,7 +852,7 @@ http://spark.apache.org/docs/latest/ml-classification-regression.html#classifica
 We also could enrich our initial dataset by adding features to it. One simple
 feature to add would be the family size of each passenger. Knowing that you
 can add a feature NewFeat sum of two existing features Feat1 and Feat2 like
-in listing 2.20.
+in listing 2.21.
 
 .Creating a new column sum of two existing ones in a DataFrame.
 [source,scala]
