@@ -326,7 +326,7 @@ To do so, we will count the occurrences of the different types of action one
 can perform on GitHub for each user.
 
 As a result, we're looking to go from our raw JSON event data listed in table
-7.4 to what is shown in table 7.5:
+7.4 to what is shown in table 7.5.
 
 .Our raw dataset.
 [options="header"]
@@ -367,7 +367,7 @@ https://github.com/BenFradet/spark-ml-in-action/blob/master/chapter7/src/main/re
 In listing 7.2, we'll be loading this data into a DataFrame, we'll be assuming
 the file is available from the _/data/2016-01-01.json.gz_ path.
 
-.Loading our dataset from HDFS using the _SparkSession_ available in the REPL.
+.Loading our dataset using the _SparkSession_ available in the REPL.
 [source,scala]
 ----
 val inputPath = "/data/2016-01-01.json.gz" // <1>

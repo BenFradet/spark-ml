@@ -1,0 +1,1678 @@
+:source-highlighter: coderay
+:chapter: 4
+:sectnums:
+:sectnumoffset: 2
+:figure-caption: Figure {chapter}.
+:listing-caption: Listing {chapter}.
+:table-caption: Table {chapter}.
+:leveloffset: 1
+
+= Triaging GitHub issues using a decision tree
+
+This chapter covers
+
+- Classification and how it is used
+- Understanding what a decision tree is and how it works in a distributed
+fashion
+- Transforming raw data to be able to use a decision tree
+- Tuning our model to get the best results possible
+
+In this chapter, we will try to ease the burden of maintainers of open source
+projects on GitHub by building a machine learning model that will be able to
+find the most appropriate label for an issue.
+
+The goal is to alleviate the overhead maintainers have to face when
+dealing with an incoming issue. Typically, a user will come in and log an issue.
+This issue will be read once by the maintainer who will label it appropriately.
+When this maintainer has enough time to spend on this particular issue, she
+will have to become familiar with the issue once again in order to solve it.
+A lot of the time, maintainers skip the first step altogether and the ability
+of labelling issues in GitHub goes, as a result, unused. We're going to try and
+solve step one with machine learning so that if a maintainer has only enough
+time to answer a question he can directly look at the issues which have already
+been labelled "question" by our model.
+
+We will limit ourselves to the prediction of three labels: question,
+enhancement and bug because they are present by default when you create a
+repository on GitHub and are the most commonly used as we'll see when we'll
+investigate the data.
+
+== Classification
+
+In machine learning terms, we want to build a model that is able to predict the
+most appropriate issue label (our label) given the text contained in the issue
+(our features).
+
+As in chapter two, this is also a supervised learning problem because it can
+be perceived as building a function that takes the text of the issue as input
+and outputs one of question, bug or enhancement.
+
+Moreover, since the set of possible values our function can produce is finite
+(bug, question or enhancement) this is a classification problem.
+
+== The decision tree algorithm
+
+Decision trees can be used as a machine learning model either for classification
+or regression. In the case of classification, the leaves of the tree represent
+possible values the label can take whereas the internal nodes are decisions
+made on a feature that tries to improve our classification.
+
+It can easily be represented as a flowchart. For example, if we go back to the
+Titanic dataset of chapter two where, as a reminder, the goal was to predict
+whether or not a passenger survived based on a few characteristics like age,
+gender or passenger class. We could imagine a very simple classification model
+such as the one shown in figure 4.1.
+
+.A very simple decision tree to tell whether a passenger survived the Titanic.
+image::../images/c4_titanic_dt.png[]
+
+Our very simple decision tree predicts that a passenger survived if she or he
+was an adult. Here, the unique internal node is a decision about the age
+feature. When we want to know what the decision tree would predict for a new
+observation, we just give this observation as input to the root of the tree and
+we follow along the decisions according to the values of the features for this
+new observation.
+
+=== Decision tree learning
+
+The model we just buit relied on our own very simple heuristic, however, we
+still don't know how a decision tree classifier might arrive at this result (or
+a far better one).
+
+A decision tree classifier can be created in Spark ML with the listing 4.1.
+
+.Creating a decision tree classifier.
+[source,scala]
+----
+import org.apache.spark.ml.classification.DecisionTreeClassifier
+val dtc = new DecisionTreeClassifier()
+----
+
+The process of learning, or building the decision tree, can be broken down as
+the following sequence of steps:
+
+1. All the features are bucketed or binned. For categorical features, like the
+class the passenger was in, there is usually one bin for every value the feature
+can take. Here, this would result in three bins: first, second and third class.
+For continuous features, bins calculations are done on a randomly-chosen sample
+of data. For each feature, if there are less distinct values, in this sample,
+than a preset maximum number of bins (let's call it `maxBins`), there will be
+one bucket per distinct value. However, if there are more distinct values than
+maxBins, maxBins buckets will be built so that the sampled data is more or less
+uniformly distributed across those buckets. If we go back to our example, the
+bucketing of the Age feature could result in: child (0-12 years), teen (13-17),
+adult (18-35), middle-age (36-59) and senior (60 and more) if maxBins = 5 and
+assuming the people's age follow a uniform distribution across those buckets.
+This maximum number of bins can be set with the code in listing 4.2.
+
+.Setting a maximum number of bins for the bucketing of the continuous features.
+[source,scala]
+----
+import org.apache.spark.ml.classification.DecisionTreeClassifier
+val dtc = new DecisionTreeClassifier()
+  .setMaxBins(32)
+----
+
+[start=2]
+2. Once those buckets are built, we'll try to find the best split, which can
+be thought of as the best decision we can make about classifying our
+observations, across all features according to an information gain metric which
+we'll detail next.
+3. If the information gain for the best split we just computed is inferior
+to some threshold, we'll create a leaf node with the most common label
+in the data that arrived to this node. For example, if
+there are 72% of people who are not adult that survived, the label of the
+created leaf node will be survived. On the other hand, if there are only 36% of
+adult people that survived, the leaf node produced will contain the did not
+survive label. You can set the minimum information gain if you follow listing
+4.3. Don't worry if the information gain concept seems vague, it'll be properly
+defined in the next subsection.
+
+.Setting a minimum information gain for each decision node.
+[source,scala]
+----
+import org.apache.spark.ml.classification.DecisionTreeClassifier
+val dtc = new DecisionTreeClassifier()
+  .setMinInfoGain(0.01)
+----
+
+[start=4]
+4. If there are less than a predefined number of observations falling into a
+particular node, we'll turn this node into a leaf node containing the most
+common label among those observations. You can also change this parameter thanks
+to the code shown in listing 4.4.
+
+.Setting a minimum number of observations per leaf node.
+[source,scala]
+----
+import org.apache.spark.ml.classification.DecisionTreeClassifier
+val dtc = new DecisionTreeClassifier()
+  .setMinInstancesPerNode(10)
+----
+
+[start=5]
+5. If the depth of the decision node produced exceeds the predefined maximum
+depth of the tree, a leaf node is created with the label which has the majority,
+this parameter can be set with the following listing (4.5).
+
+.Setting the maximum depth of the tree.
+[source,scala]
+----
+import org.apache.spark.ml.classification.DecisionTreeClassifier
+val dtc = new DecisionTreeClassifier()
+  .setMaxDepth(5)
+----
+
+[start=6]
+6. If all the examples coming out of the best decision have the same label,
+we'll create a leaf node with this label.
+7. Otherwise, we create a decision node based on the best split and go back to
+step two.
+
+=== Information gain metrics
+
+As we just mentioned, we need a way to find the best decision possible in order
+to construct each node in the tree. To do so, we'll measure the homogeneity of
+the classes of the two subsets produced by a decision node, we talk about
+purity or impurity of a dataset.
+
+There are two strategies to measure the impurity of a subset, which we'll
+detail now.
+
+==== Gini impurity
+
+It measures "how often a randomly chosen element from the set would be
+incorrectly labeled if it was randomly labeled according to the distribution of
+labels in the subset", according to Wikipedia. Hard to grok, isn't it? Defining
+it in mathematical terms and walking through an example will make everything
+clearer.
+
+For a subset with _J_ classes, _i ∈ 1, 2, ... J_ being the ith class and fi
+being the fraction of examples labeled with the _i_ class, it's defined as:
+
+latexmath:[$Gini \: impurity = 1 - \sum_{i=1}^J f_i^2$]
+
+Let's walk through an example with a sample extracted from the Titanic dataset
+seen in chapter two shown in table 4.1.
+
+.Example dataset.
+[options="header"]
+|===
+ 3+^.^h|Features|Class
+|Gender|Class|Port|Survived
+|M|3rd|Southampton|No
+|F|3rd|Southampton|No
+|F|3rd|Cherbourg|Yes
+|M|1st|Cherbourg|Yes
+|M|3rd|Cherbourg|No
+|F|1st|Cherbourg|Yes
+|M|1st|Southampton|No
+|M|1st|Cherbourg|No
+|M|3rd|Queenstown|No
+|M|1st|Cherbourg|Yes
+|===
+
+Since six people out of ten survived and four did not, we get the following
+impurity:
+
+latexmath:[$Gini \: impurity = 1 - (\frac{6}{10}^2 + \frac{4}{10}^2 ) = 0.48$]
+
+Since, we're looking for a pure subset, we'd like the Gini impurity to be zero.
+
+==== Entropy
+
+The binary entropy function can also be used as a measure of impurity for a
+binary class that can take value a or b, it is shown in figure 4.2.
+
+.Entropy as a function of Pr(X = a).
+image::../images/c4_entropy.png[]
+
+As we can see, it's at his maximum when Pr(X = a) is at 0.5 (and consequently
+Pr(X = b) = 0.5 too) which means maximum uncertainty: equal probability of
+being either a or b. It's at its minimum when either Pr(X = a) = 0 (Pr(X = b) =
+1) or Pr(X = a) = 1 (Pr(X = b) = 0) which means complete certainty.
+
+As a result, we will look for low entropies when evaluating the purity of a
+subset of data.
+
+It can be generalized for J classes and computed as:
+
+latexmath:[$Entropy = - \sum_{i = 1}^J f_i \times log_2(f_i)$]
+
+If we compute the entropy of our example dataset in table 4.1, we have:
+
+latexmath:[$Entropy = - (\frac{6}{10} \times log_2(\frac{6}{10}) + \frac{4}{10} x log_2(\frac{4}{10})) = 0.97$]
+
+==== Information gain
+
+Now that we understand the two strategies used to measure the purity of a
+subset, we can tackle the problem of evaluating decisions. We'll do so by
+defining information gain which can be groked in simple terms by: are the
+subsets my decision produced purer that the subset I had before the decision.
+Information gain relies on a strategy for measuring purity such as Gini or
+entropy.
+
+If we go back to our simple decision tree repeated in figure 4.3.
+
+.A very simple decision tree to tell whether a passenger Survived the Titanic.
+image::../images/c4_titanic_dt.png[]
+
+Are the two subsets produced by our decision (adults on one side, children on
+the other) more homogenous with regards to the class (survived or not) than the
+one we had before the decision (every single example since it was the first
+decision node we built).
+
+It can be measured as the difference between the purity of the parent subset
+and the weighted sum of the purity of the two children.
+
+latexmath:[$Information \: gain = purity \: metric \: of \: the \: parent - \sum purity \: metrics \: of \: the \: children$]
+
+==== Building our first decision node
+
+Now that we have all the tools let's build the first node of a decision tree if
+we were to build a classifier for the dataset in table 4.2.
+
+.Example dataset.
+[options="header"]
+|===
+ 3+^.^h|Features|Class
+|Gender|Class|Port|Survived
+|M|3rd|Southampton|No
+|F|3rd|Southampton|No
+|F|3rd|Cherbourg|Yes
+|M|1st|Cherbourg|Yes
+|M|3rd|Cherbourg|No
+|F|1st|Cherbourg|Yes
+|M|1st|Southampton|No
+|M|1st|Cherbourg|No
+|M|3rd|Queenstown|No
+|M|1st|Cherbourg|Yes
+|===
+
+As we've just seen, the Gini impurity for this dataset is 0.48 and its entropy
+is 0.97.
+
+Now, we have to evaluate every possible split of our three features (gender,
+class, port). Let's start with the gender feature, if we were to split based
+on sexe we would obtain two datasets: one for the women and one for the men,
+those are detailed in table 4.3 and 4.4.
+
+.Split of the example dataset on gender with only women.
+[options="header"]
+|===
+|Gender|Survived
+|F|No
+|F|Yes
+|F|Yes
+|===
+
+For brevity, we only kept the feature we're splitting on (here gender) and
+the class (survived).
+
+If we compute the Gini impurity for this subset we'd obtain:
+
+latexmath:[$1 - (\frac{2}{3}^2 + \frac{1}{3}^2) = 0.44$]
+
+Same goes for the entropy:
+
+latexmath:[$-(\frac{1}{3} * log_2(\frac{1}{3}) + \frac{2}{3} * log_2(\frac{2}{3})) = 0.92$]
+
+From now on, we won't detail the calculations as they are too redudant.
+
+The other split (the dataset with only the males) can be found in table 4.4.
+
+.Split of the example dataset on gender with only men.
+[options="header"]
+|===
+|Gender|Survived
+|M|No
+|M|Yes
+|M|No
+|M|No
+|M|No
+|M|No
+|M|Yes
+|===
+
+The Gini impurity is 0.41 and the entropy is 0.86.
+
+Now that we have the impurity measurements before the split and after, we can
+compute the information gain this split would bring us. We note information
+gain IG(Gender) the information gain on the gender feature for our particular
+dataset.
+
+latexmath:[$IG_{entropy}(gender) = 0.97 - (\frac{3}{10} \times 0.92 + \frac{7}{10} \times 0.86) = 0.09$]
+
+latexmath:[$IG_{gini}(gender) = 0.48 - (\frac{3}{10} \times 0.44 + \frac{7}{10} \times 0.41) = 0.06$]
+
+We effectively subtract the impurities of the children from the one of the
+parent. As its name implies we're looking for the highest information gain.
+
+Let's move on to the class feature and let's split on it (since there are no
+passengers in the second class we omit it). Those splits can be seen in table
+4.5 and 4.6.
+
+.Split of the example dataset on passenger class with third class passengers only.
+[options="header"]
+|===
+|Class|Survived
+|3rd|No
+|3rd|No
+|3rd|Yes
+|3rd|No
+|3rd|No
+|===
+
+The Gini impurity for this subset is 0.32 and its entropy 0.72.
+
+.Split of the example dataset on passenger class with 1st class passengers only.
+[options="header"]
+|===
+|Class|Survived
+|1st|Yes
+|1st|Yes
+|1st|No
+|1st|No
+|1st|Yes
+|===
+
+Gini impurity = 0.48, entropy = 0.97.
+
+If we compute the information gain with the two available impurities we get:
+
+latexmath:[$IG_{entropy}(class) = 0.97 - (\frac{5}{10} \times 0.72 + \frac{5}{10} \times 0.97) = 0.13$]
+
+latexmath:[$IG_{gini}(class) = 0.48 - (\frac{5}{10} \times 0.32 + \frac{5}{10} \times 0.48) = 0.08$]
+
+We get slightly better information gains, so far the passenger class would
+produce the best decision node. Finally, let's find out the information gains
+relating to the port feature. We'll find the datasets resulting from this split
+in tables 4.7, 4.8 and 4.9.
+
+.Split of the example dataset on port with people coming from Southampton only.
+[options="header"]
+|===
+|Port|Survived
+|S|No
+|S|No
+|S|No
+|===
+
+Since every example in this subset belongs to the same class (did not survive),
+it is pure and its impurity is consequently 0 no matter the computation
+strategy (Gini or entropy).
+
+.Split of the example dataset on port with people coming from Cherbourg only.
+[options="header"]
+|===
+|Port|Survived
+|C|Yes
+|C|Yes
+|C|No
+|C|Yes
+|C|No
+|C|Yes
+|===
+
+Its Gini impurity is 0.44 and its entropy is 0.92.
+
+.Split of the example dataset on port with people coming from Queenstown only.
+[options="header"]
+|===
+|Port|Survived
+|Q|No
+|===
+
+Because there is only one example the dataset is pure.
+
+Computing the information gains for this split will result in the following:
+
+latexmath:[$IG_{entropy}(port) = 0.97 - (\frac{3}{10} \times 0 + \frac{6}{10} \times 0.92 + \frac{1}{10} \times 0) = 0.42$]
+
+latexmath:[$IG_{gini}(port) = 0.48 - (\frac{3}{10} \times 0 + \frac{6}{10} \times 0.44 + \frac{1}{10} \times 0) = 0.22$]
+
+Because a split on the port feature present the highest information gains, we
+know that our first decision node will be on the port feature as shown in
+figure 4.3.
+
+.The first decision node in our decision tree
+image::../images/c4_first_node.png[]
+
+Furthermore, because the subsets for Queenstown and Southampton were pure
+(everybody died), we've reached a stopping criterion which means a leaf is
+created.
+
+This process continues for the Cherbourg subset until we reach one of the
+stopping conditions we listed earlier.
+
+Now that we understand how to build a decision tree on a small dataset, let's
+see how it works with distributed data inside Spark ML.
+
+== The distributed decision tree algorithm
+
+During initialization, the continuous features are binned using a sample of the
+distributed data following the same process we described during our explanation
+of local decision trees.
+
+Next, we'll describe a typical cycle of a distributed decision tree as it is
+implemented in Spark ML using the schema in figure 4.4.
+
+.A cycle in the distributed decision tree algorithm in Spark ML.
+image::../images/c4_algo.png[]
+
+The node stack being maintained on the driver contains the list of nodes in
+our decision tree that need splitting. When the algorithm starts, we only need
+to split the root containing all the observations.
+
+The first step will be to pop some nodes for splitting. The number of nodes
+popped depends on an estimation of how much memory will be needed to compute
+information gain for this node. This estimation is then compared to a
+`maxMemoryInMB` parameter which defaults to 256MB, it can be set with the code
+in listing 4.6.
+
+.Setting the maximum memory in Mb used for the computations of information gain in each cycle of the algorithm
+[source,scala]
+----
+import org.apache.spark.ml.classification.DecisionTreeClassifier
+val dtc = new DecisionTreeClassifier()
+  .setMaxMemoryInMB(256)
+----
+
+Once the nodes have been selected, the nodes to split are sent to the executors.
+The current decision tree model containing the splits that have been built so
+far is also sent. For the first iteration, this model only contains the root
+node. This process is denoted as step two in the schema in figure 4.4.
+
+For each node received, impurity calculations are done for each (feature, split)
+combination possible on the executors. Those calculations are done on the
+subset of data available on this executor. This step (the third in the schema)
+is analogous to what we've done in the example on how to build a deicion node.
+If we go back to this example, we could imagine having received the root node to
+split (which has every observation) and having access to only those ten
+examples, we subsequently tried to split the dataset in every kind of way
+according to its features (gender, class and port) and its corresponding splits
+(male/female for the gender feature, first/third for the class, Q/S/C for the
+port), for each of those combinations we computed the impurity of the resulting
+subset.
+
+What we haven't done yet is computing information gains. To do this we need to
+have all the impurities corresponding to a (node, feature, split) triple
+accessible on a node. As a result, we're sending the impurities for every
+combination on particular nodes to be aggregated in step four. This is done
+thanks to a reduce operation where the key is the (node, feature, split)
+triple (all impurities for this triple will land on the same node) and the
+impurities are aggregated together. This is represented by step four
+in the schema where impurities are sent across the different nodes based on
+their key. Since all impurity stats for a triple is present on some single
+node as well as the current model, the information gain is calculated and
+a best split is chosen for each node. From this information gain, we're able
+to choose the best split for each node.
+
+Those best splits are then sent back to the driver in step five in figure 4.4.
+For each node that was sent a new split is created. If some stopping criterion
+is reached such as the information gain being too low, the number of
+observations falling into this split being too low, the depth of the new node
+reaching the maximum depth of the tree or all observations falling into this
+split belonging to the same class, a leaf node is created. Otherwise, a node is
+created and pushed onto the stack of nodes that need splitting (step six).
+
+This process goes on until the node stack is empty which means that our decision
+tree is complete with respect to the stopping criterion we set.
+
+Since the underlying data structure for storing the nodes that need splitting is
+a stack, we're building our tree in a depth first manner. This effectively means
+that when we start building a branch from the root, we would continue until a
+leaf is reached assuming that we would only have memory to compute the stats for
+a single node.
+
+== Preparing the data
+
+Let's see how Spark ML exposes the decision tree algorithm by trying to solve
+our initial problem which was, as a reminder, to label incoming issues.
+
+In this secion, we'll prepare our data so that it can be fed into the algorithm.
+To do so, we'll go back to our raw GitHub data which are a bunch of gzipped
+JSONs. Refer to chapter three for a thorough explanation regarding the data
+format.
+
+In this chapter, we will only be interested in the IssuesEvent type of event
+because it contains what we're looking for: the text describing the issue as
+well as its title.
+
+Schematically, we'll be looking to go from our raw data which looks like what's
+in table 4.10.
+
+.Our raw dataset.
+[options="header"]
+|===
+|actor|type|payload|etc
+|{user data}|ClosedIssuesEvent|{ content }|...
+|{...}|PushEvent|{...}|...
+|{...}|RepositoryCreateEvent|{...}|...
+|{...}|PushEvent|{...}|...
+|{...}|BranchCreateEvent|{...}|...
+|===
+
+To what is shown in table 4.11.
+
+.Our prepared dataset.
+[options="header"]
+|===
+|text|label
+|I have a question regarding Spark ML...|question
+|Is this the behavior expected...|bug
+|===
+
+From now on, we'll be working with the raw data for January 1st 2016 and we'll
+assume it's located at the '/data/2016-01-01.json.gz' path. You can find this
+file at: https://github.com/BenFradet/spark-ml-in-action/tree/master/data.
+
+If you want to follow along, fire up your REPL by launching the `spark-shell`
+command located in the `bin/` folder of your Spark installation.
+
+=== Loading the data
+
+First, let's load the data in listing 4.7, note that Spark will take of
+uncompressing the file for us.
+
+.Loading our dataset using the _SparkSession_ available in the REPL.
+[source,scala]
+----
+val events = spark.read.json("/data/2016-01-01.json.gz")
+----
+
+When reading JSON data, we use a SparkSesion (named spark in the REPL), this
+SparkSession makes a `read` method available which sends back a
+`DataFrameReader`. From the DataFrameReader, you can read a multitude of
+formats, JSON being one of them. If you want to learn more about
+DataFrameReader, I invite you to check out the Scaladoc:
+http://spark.apache.org/docs/latest/api/scala/index.html#org.apache.spark.sql.DataFrameReader. One of the niceties with the `json` method of `DataFrameReader` is that the
+schema of the data will be inferred. We can verify that by printing the
+schema of the events variable in listing 4.8.
+
+.Printing the schema of our data.
+[source,scala]
+----
+events.printSchema()
+
+// root
+//  ...
+//  |-- payload: struct (nullable = true)
+//  |    ...
+//  |    |-- issue: struct (nullable = true)
+//  |    |    ...
+//  |    |    |-- body: string (nullable = true)
+//  |    |    ...
+//  |    |    |-- labels: array (nullable = true)
+//  |    |    |    |-- element: struct (containsNull = true)
+//  |    |    |    |    |-- color: string (nullable = true)
+//  |    |    |    |    |-- name: string (nullable = true)
+//  |    |    |    |    |-- url: string (nullable = true)
+//  |    |    ...
+//  |    |    |-- title: string (nullable = true)
+//  |    |    ...
+//  |    ...
+//  ...
+//  |-- type: string (nullable = true)
+----
+
+If we run this piece of code in the REPL, we'll notice the schema is very much
+bigger that what is displayed in the listing: we've omitted a lot of things to
+focus on what is of interest to us in this chapter. This large schema is the
+result of the union of all the possible schemas. We've seen in chapter three
+that there were quite a few different schemas for different type of events. We
+are effectively confronted to this issue here.
+
+In the schema, we mostly find simple types like string or boolean. Structs on
+the other hand are more complex types made of simpler types like issue
+in listing 4.9 (it's not the real schema for the issue field to simplify things
+a bit).
+
+.Schema for the repo field in the events schema.
+[source,scala]
+----
+ |-- issue: struct (nullable = true)
+ |    |-- body: string (nullable = true)
+ |    |-- id: long (nullable = true)
+ |    |-- title: string (nullable = true)
+ |    |-- url: string (nullable = true)
+----
+
+It's made of an id (a long), a body, a title and a URL (all strings). This group
+of fields makes up the repo which is a struct. All those nullable fields mean
+that this specific field isn't present in every record in our dataset. For
+example, we won't find the issue field in a CommitCommentEvent. Because
+our schema is the union of all possible schemas, all fields are marked as
+nullable.
+
+There is a last type of field named array which denotes collections of simple
+or complex types. Because there might be multiple labels on a single GitHub
+issue, labels on an issue are represented as an array as shown in listing 4.10.
+
+.Schema for the labels field in the events schema.
+[source,scala]
+----
+ |-- labels: array (nullable = true)
+ |    |-- element: struct (containsNull = true)
+ |    |    |-- color: string (nullable = true)
+ |    |    |-- name: string (nullable = true)
+ |    |    |-- url: string (nullable = true)
+----
+
+`element` is a meta-field as it wasn't present in the initial JSON but is used
+internally by Spark to represent an element of the collection at hand. The
+`containsNull` just means that there might be null elements in the array.
+
+You can have a look at a few events with `events.show(5)`.
+
+We've established that a lot of stuff won't be useful to us in this chapter, now
+it's time to filter them out.
+
+=== Transforming our events
+
+Because we're only interested in the IssuesEvent event type, we'll first filter
+out the events that are not of this type in listing 4.11.
+
+.Filtering out events which are not of the IssuesEvent event type.
+[source,scala]
+----
+val issueEvents = events.filter($"type" === "IssuesEvent")
+----
+
+The filter method used here takes a `Column`, columns can be composed to
+form complex expressions such as this one which is an equality test. The dollar
+sign shorthand operator converts string to a Column having the specified name.
+
+We now have all the issue events, what's left is to keep only what we're
+interested in, namely the title and the body of the issue as well as its labels
+(listing 4.12).
+
+.Projecting our issues to only keep the needed fields.
+[source,scala]
+----
+val projectedIssues = issueEvents.select(
+  $"payload.issue.title",
+  $"payload.issue.body",
+  $"payload.issue.labels",
+)
+----
+
+As usual, you can have a look at the structure of the data with the
+printSchema method and pick at a few elements with the show method.
+
+As a reminder, the end goal is to have one column of text and a column with a
+label. The first step will be to combine the title and body of the issue into
+a single column.
+
+==== Transforming the text column
+
+Unfortunately, people on GitHub tend to sometimes log issues without bodies
+because it is not required. As a result, there are a number of issues with null
+bodies. To remedy this problem, we'll replace those null bodies with empty
+strings in listing 4.13.
+
+.Converting null bodies to empty strings.
+[source,scala]
+----
+val noNullBodyIssues = projectedIssues.na.fill("")
+----
+
+`na` returns an instance of the `DataFrameNaFunctions` utility class (more info
+at http://spark.apache.org/docs/latest/api/scala/index.html#org.apache.spark.sql.DataFrameNaFunctions) which provides various ways of interacting with not available data
+(mostly replacing or dropping them). Here, we just replace every null values
+in any column with an empty string with the help of the `fill` method.
+
+We can now combine the titles and bodies of issues in listing 4.14.
+
+.Concatenating the title and body columns.
+[source,scala]
+----
+val concatIssues = noNullBodyIssues.select(
+  concat($"title", lit(" "), $"body").as("text"),
+  $"labels"
+)
+----
+
+`concat` and `lit` are two Spark SQL functions made available in the
+org.apache.spark.sql.functions object (you can have a look at the full list at
+http://spark.apache.org/docs/latest/api/scala/index.html#org.apache.spark.sql.functions$)
+
+Lit creates a column with the provided literal, here a space.
+Concat takes multiple Column parameters containing strings and concatenate them.
+Here we're combining the title, a space and the body into a single column.
+We're renaming it to text thanks to the `as` method of the Column class.
+
+==== Transforming the label column
+
+Now that the work on the column containing the text is done, we can start to
+focus on the column containing the label. As is, the labels column contains an
+array of label, not a single one. Plus, for each element of this array, there is
+information we don't need such as the color of the label as well as its url (we
+only care about its name.
+
+Because the operations needed are a bit too involved for the DataFrame API,
+we're going to move to the Dataset API where we'll benefit from typed operations
+very similar to what you do locally with the collection API in Scala.
+
+To do so, we first need to define a model reflecting the current state of the
+concatIssues DataFrame by creating a case class, this is shown in listing 4.15.
+
+.Creating a case class model.
+[source,scala]
+----
+case class GHLabel(
+  url: String,
+  name: String,
+  color: String
+)
+
+case class GHIssue(
+  text: String,
+  labels: Seq[GHLabel]
+)
+----
+
+We can now convert our DataFrame to a Dataset[GHIssue] in listing 4.16.
+
+.Converting our DataFrame to a Dataset.
+[source,scala]
+----
+val ghIssues = concatIssues.as[GHIssue]
+----
+
+The `as` method will map every record to the type specified between brackets.
+
+We can now work on the labels more easily and map every piece of text for an
+issue to a label. We're going to limit ourselves to a list of three labels:
+enhancement, bug and question because those are the most common (finding out
+whether they really are the most common is left as an exercise).
+
+To help us in the modeling of our output format, we're going to define a last
+case class that reflects what we want in the end in listing 4.17.
+
+.Our end goal model.
+[source,scala]
+----
+case class Issue(
+  text: String,
+  label: String
+)
+----
+
+For each record in ghIssues, we need to find out if zero or more of the
+affected labels are part of the labels we're taking into account. We'll output
+one record for each label that is in our list or no records if there are no
+labels or if all affected labels are not contained by our list. This operation
+can be done using `flatMap` in listing 4.18.
+
+.Outputting one record for each matching label.
+[source,scala]
+----
+val possibleLabels = Seq("enhancement", "bug", "question")             // <1>
+val issues = ghIssues.flatMap { i =>
+  val labels = i.labels
+    .map(_.name)
+    .filter(possibleLabels.contains)                                   // <2>
+  labels.map(n => Issue(i.text.replaceAll("[\n\r]", " "), n))          // <3>
+}
+----
+<1> We're defining the allowed set of labels.
+<2> For each record we find out the list of labels they have that are part of
+the labels we're looking for. This collection can be empty if there are no
+matches.
+<3> For each of the labels that match we create a new Issue with the sanitized
+text and the name of the label.
+
+We clean up the issue text a bit by removing empty lines.
+
+As always, you can have a look at our dataset in its final form with
+`issues.show(5)`.
+
+As an exercise, try to find out how many issues there are per label.
+
+Our dataset is now ready for our pipeline, let's save it for later in the next
+section.
+
+=== Saving the data
+
+We'll write our output dataset in JSON in the /data/data-prep-c7.json folder in
+listing 4.19.
+
+.Saving our data in JSON format.
+[source,scala]
+----
+issues.write.json("/data/data-prep-c7.json")
+----
+
+We're ready to start building our pipeline!
+
+.Where to find the code.
+****
+You can find the full code for the data preparation we just performed at
+https://github.com/BenFradet/spark-ml-in-action/blob/master/chapter4/src/main/scala/io/github/benfradet/spark/ml/in/action/DataPreparation.scala.
+****
+
+== Building the decision tree model naively
+
+Now that we have the text contained in an issue as well as the label associated,
+we can start building our machine learning pipeline.
+
+=== Reading the dataset built during the previous section
+
+If you're continuing directly from the previous section you can safely pass this
+subsection as we'll read back the data we just wrote to disk.
+
+If you don't have the data available as a DataFrame, you can read it back with
+the code in listing 4.20.
+
+.Reading back our issues data.
+[source,scala]
+----
+val issues = spark.read.json("/data/data-prep-c7.json")
+----
+
+=== Splitting training and testing datasets
+
+Before all the feature engineering that will take place in the next few
+subsections, we're going to split our issues dataset in two: one that will be
+used for training and another which will be used for testing. We choose a
+80-20 split in favor of the training in listing 4.21.
+
+.Splitting our dataset in two.
+[source,scala]
+----
+val Array(training, test) = issues.randomSplit(Array(0.8, 0.2))
+----
+
+=== Indexing our labels
+
+The first component in our pipeline will address the constraint in Spark ML
+that every label, in the machine learning sense: value we want to predict, has
+to be of double type. At the moment, our labels are string (question, bug,
+enhancement). Fortunately for us, there is an Estimator built for this purpose:
+StringIndexer. We're going to leverage this Transformer in listing 4.22.
+
+.Indexing our label column with a StringIndexer.
+[source,scala]
+----
+import org.apache.spark.ml.feature.StringIndexer
+val labelCol = "label"
+val idxdLabelCol = labelCol + "Indexed"
+val labelIndexer = new StringIndexer()
+  .setInputCol(labelCol)
+  .setOutputCol(idxdLabelCol)
+  .fit(training)
+----
+
+StringIndexer will effctively create a mapping between values in the original
+column (input column) and double indices starting from zero. This mapping will
+then be used to add a column (the ouput column) containing the proper doubles.
+We're directly turning our StringIndexer Estimator into a Transformer thanks
+to its fit method. This is needed because we will need this mapping in order
+to convert back predicted values (which will be doubles) to our original labels
+(question, enhancement and bug) so we can reason about them.
+
+The opposite of StringIndexer is the IndexToString Transformer which will create
+a new column containing labels from a column containing indices produced by its
+associated StringIndexer (listing 4.23).
+
+.Converting indices back to labels.
+[source,scala]
+----
+import org.apache.spark.ml.feature.IndexToString
+val indexToLabel = new IndexToString()
+  .setInputCol("prediction")
+  .setOutputCol("predictedLabel")
+  .setLabels(labelIndexer.labels)
+----
+
+We're specifying the labels we want as the initial labels from our labelIndexer.
+
+This Transfomer will be the last component in our Pipeline as it will convert
+double labels predicted by the decision tree model to their human readable
+counterparts (question, bug or enhancement).
+
+=== Turning our raw text into a feature vector
+
+You might have guessed that raw text can't directly serve as input features to
+the decision tree algorithm. Raw text doesn't really comply with what can be
+seen in a categorical feature like the port in the Titanic dataset (finite set
+of possible values) or numeric like the age of a passenger in the Titanic set
+(can be represented by one number). What we're going to try to do in this
+subsection is to represent every issue's text in a numeric vector that will
+serve as features.
+
+==== Removal of non-text
+
+The first step is to remove all non-word characters: all the punctuation and
+whitespace characters. Spark ML comes bundles with a Transformer called
+RegexTokenizer that will extract tokens by applying a provided regex to split
+the input text. When applying this Transformer (through its transfom method),
+it'll add a column to the input DataFrame containing a vector with the extracted
+tokens. We create a RegexTokenizer in listing 4.24.
+
+.Creating a RegexTokenizer.
+[source,scala]
+----
+import org.apache.spark.ml.feature.RegexTokenizer
+val tokenizer = new RegexTokenizer()
+  .setInputCol("text")
+  .setOutputCol("words")
+  .setPattern("\\W")
+  .setMinTokenLength(2)
+----
+
+The pattern is the regex that will be used to match tokens. We also specify a
+minimum length of two for a token to be kept in the output vector.
+
+As an example, if we were to apply this RegexTokenizer to the dataset in table
+4.12, we'd obtain the dataset in table 4.13.
+
+.Dataset before applying the RegexTokenizer
+[options="header"]
+|===
+|inputCol
+|This is a text
+|Notice! The removal of all punctuation.
+|EVERYTHING IS LOWERCASE
+|Words with length < 2 are removed
+|===
+
+.Dataset after applying the RegexTokenizer
+[options="header"]
+|===
+|inputCol|outputCol
+|This is a text|["this", "is", "text"]
+|Notice! The removal of punctuation.|["notice", "the", "removal", "of", "punctuation"]
+|EVERYTHING IS LOWERCASE|["everything", "is", "lowercase"]
+|Words with length < 2 are removed|["words", "with", "length", "are", "removed"]
+|===
+
+.Explain parameters
+****
+When interacting with a new Transformer or Estimator you're not familiar with,
+it's always a good idea to call the `explainParams` on it as shown in listing
+4.25.
+
+.Calling explainParams on tokenizer.
+[source,scala]
+----
+tokenizer.explainparams()
+
+// gaps: Set regex to match gaps or tokens (default: true)
+// inputCol: input column name (undefined)
+// minTokenLength: minimum token length (>= 0) (default: 1)
+// outputCol: output column name (default: regexTok_b746fb502d20__output)
+// pattern: regex pattern used for tokenizing (default: \s+)
+// toLowercase: whether to convert all characters to lowercase before tokenizing. (default: true)
+----
+****
+
+==== Removal of all the useless words
+
+The next step is to remove all words that do not help us identify the theme of
+the text. Intuitively, those words are the most common in a text: the ofs, thes,
+ares, Is and so on. In natural language processing, those useless words are
+called stop words (https://en.wikipedia.org/wiki/Stop_words).
+
+Once again, we won't have to do that ourselves as there is a StopWordsRemover
+Transformer in Spark ML. It works quite simply by loading a list of stop words
+for a particular language and filter out words that are in this list.
+
+There are quite a few lists of stop words for multiple languages in Spark ML,
+you can have a look at those lists here:
+https://github.com/apache/spark/tree/master/mllib/src/main/resources/org/apache/spark/ml/feature/stopwords.
+We'll limit ourselves to the english stop words as we can all agree this is the
+de facto language on GitHub.
+
+We create a StopWordsRemover in listing 4.26.
+
+.Creating a StopWordsRemover.
+[source,scala]
+----
+import org.apache.spark.ml.feature.StopWordsRemover
+val remover = new StopWordsRemover()
+  .setInputCol("words")
+  .setOutputCol("filtered_words")
+  .setCaseSensitive(false)
+----
+
+We just specify that we don't care about case, so all words will be converted
+to lowercase. As usual, you can call the explainParams method on remover to
+know a bit more about the other parameters.
+
+Let's see how it works with a before/after application of a StopWordsRemover
+in tables 4.14 and 4.15.
+
+.Dataset before applying the StopWordsRemover
+[options="header"]
+|===
+|inputCol
+|["this", "is", "text"]
+|["notice", "the", "removal", "of", "punctuation"]
+|["everything", "is", "lowercase"]
+|["words", "with", "length", "are", "removed"]
+|===
+
+.Dataset after applying the StopWordsRemover
+[options="header"]
+|===
+|inputCol|outputCol
+|["this", "is", "text"]|["text"]
+|["notice", "the", "removal", "of", "punctuation"]|["notice", "removal", "punctuation"]
+|["everything", "is", "lowercase"]|["everything", "lowercase"]
+|["words", "with", "length", "are", "removed"]|["words", "length", "removed"]
+|===
+
+==== Standardizing our raw words vectors into fixed-length feature vectors
+
+One issue we're still facing is that our words vectors are of different length
+and aren't numeric: two requirements for a vector to be considered as features
+in Spark ML.
+
+HashingTF is a Transformer that takes a vector of words and will turn it into
+a numeric vector with a predefined fixed length for every observation. Simply
+put, it counts occurrences of each word after hashing it. A modulo is then
+applied to the result of the hashing function get the final vector index to
+update. Because an hashing function is involved, there are possibilities of
+collision: two words being mapped to the same index. This results in term
+frequencies that might have been over estimated due to those collisions.
+
+Let's create a HashingTF in listing 4.27.
+
+.Creating a HashingTF.
+[source,scala]
+----
+import org.apache.spark.ml.feature.HashingTF
+val hashingTF = new HashingTF()
+  .setInputCol("filtered_words")
+  .setOutputCol("hashed_words")
+  .setNumFeatures(32768)
+----
+
+Because we use a modulo to map the result of the hashing function to a vector
+index, it's better to have a power of two as the number of features (vector
+length).
+
+.Modulo of a power of two
+****
+When y is a power of two, we have
+
+x modulo y = (x & (y - 1))
+
+& being bitwise AND
+****
+
+Tables 4.16 and 4.17 show a HashingTF transformer with numFeatures = 4 in
+action.
+
+.Dataset before applying the HashingTF
+[options="header"]
+|===
+|inputCol
+|["text"]
+|["notice", "removal", "punctuation"]
+|["everything", "lowercase"]
+|["words", "length", "removed"]
+|===
+
+.Dataset after applying the HashingTF
+[options="header"]
+|===
+|inputCol|outputCol
+|["text"]|[0, 0, 0, 1]
+|["notice", "removal", "punctuation"]|[1, 1, 1, 0]
+|["everything", "lowercase"]|[0, 2, 0, 0]
+|["words", "length", "removed"]|[1, 2, 0, 0]
+|===
+
+We can compute those indices using a small function which mimics the behavior
+of HashingTF shown in listing 4.28.
+
+.Small function to compute a index from a word.
+[source,scala]
+----
+// taken from:
+// https://github.com/apache/spark/blob/master/core/src/main/scala/org/apache/spark/util/Utils.scala#L1659-L1666
+def nonNegativeMod(x: Int, mod: Int): Int = {
+  val rawMod = x % mod
+  rawMod + (if (rawMod < 0) mod else 0)
+}
+
+def hash(word: String, numFeatures: Int): Int =
+  nonNegativeMod(scala.util.hashing.MurmurHash3.stringHash(word), numFeatures)
+----
+
+We need the modulo operation to give back non negative results since those
+results will be treated as vector indices.
+
+For example, `hash("text", 4)` gives us 3, that's why the third index is one,
+`Seq("notice", "removal", "punctuation").map(hash(_, 4))` gives us 2, 1 and 0
+and so on. Note that the result slightly differs from what you'd get by using
+directly HashingTF because Spark uses a different way of hashing things.
+
+We immediately see that there are collisions inter-observations (words and
+punctuation being mapped to index 0) and intra-observations (everything and
+lowercase being both mapped to index 1). To minimize those collisions we need
+to carefully pick a number of features. But be careful, increasing it will
+indeed diminish collisions but as the number of features increases, the training
+of our decision tree will take longer. It is a trade-off to keep in mind.
+
+Thanks to HashingTF, we now have an imperfect representation of term frequencies
+for each GitHub issue.
+
+==== Term frequency-inverse document frequency
+
+Unfortunately, the term frequencies computed by HashingTF are not enough to
+measure the importance of a term: very common words in our issues not removed by
+the StopWordsRemover (such as code, commit or repository) will gain too much
+importance and won't help us identify the label for this particular issue. To
+help us circumvent this issue we will combine term frequencies computed by
+HashingTF with inverse document frequency (IDF), hence the name TF-IDF.
+
+Inverse document frequency aims to reduce the weight of terms with high
+frequencies and can be computed with the following formula:
+
+latexmath:[$IDF(t, D) = log \frac{|D| + 1}{DF(t, D) + 1}$]
+
+where _t_ is a term, _D_ represents our set of issues and _DF(t, D)_ is the
+number of issues that contains term _t_ (known as document frequency).
+
+TF-IDF can be calculated with:
+
+latexmath:[$TFIDF(t, d, D) = TF(t, d) \times IDF(t, D)$]
+
+where _TF(t, d)_ is the number of times term _t_ appears in document (issue)
+_d_, it's the output of HashingTF.
+
+You can learn more about TF-IDF here
+https://en.wikipedia.org/wiki/Tf%E2%80%93idf.
+
+There is an IDF Estimator in Spark ML that will compute document frequencies
+when calling the fit method. The transformer produced (IDFModel) will
+compute inverse document frequencies and will multiply those with term
+frequencies when calling the transform method to form an output column
+containing the TF-IDF. An IDF Estimator is instantiated in listing 4.29.
+
+.Creating an IDF.
+[source,scala]
+----
+val idf = new IDF()
+  .setInputCol("hashed_words")
+  .setOutputCol("features")
+  .setMinDocFreq(10)
+----
+
+The minimum document frequency parameter is used to filter out terms that do
+not meet this requirement, it defaults to one.
+
+An example of the result of IDF's fit and IDFModel's transform is shown in
+tables 4.18 and 4.19 with minDocFreq = 0 (no filtering).
+
+.Dataset before applying IDF and IDFModel
+[options="header"]
+|===
+|inputCol
+|[0, 0, 0, 1]
+|[1, 1, 1, 0]
+|[0, 2, 0, 0]
+|[1, 2, 0, 0]
+|===
+
+.Dataset after applying IDF and IDFModel
+[options="header"]
+|===
+|inputCol|outputCol
+|[0, 0, 0, 1]|[0, 0, 0, 0.92]
+|[1, 1, 1, 0]|[0.51, 0.22, 0.92, 0]
+|[0, 2, 0, 0]|[0, 0.45, 0, 0]
+|[1, 2, 0, 0]|[0.51, 0.45, 0, 0]
+|===
+
+To show how those TF-IDF statistics can be computed "by hand", you can have a
+look at listing 4.30.
+
+.Calculating TF-IDF.
+[source,scala]
+----
+// computes document frequency
+def df(t: String, corpus: Seq[Seq[String]]): Double =
+  corpus.count(_.contains(t)).toDouble
+
+// compute inverse document frequency
+def idf(t: String, corpus: Seq[Seq[String]]): Double =
+  math.log((corpus.length + 1.0) / (df(t, corpus) + 1.0))
+
+// compute the term frequency
+def tf(t: String, document: Seq[String]): Int =
+  document.count(_ == t)
+
+// compute term frequency-inverse document frequency
+def tfidf(t: String, document: Seq[String], corpus: Seq[Seq[String]]): Double =
+  tf(t, document) * idf(t, corpus)
+
+val corpus =  Seq(
+  Seq("text"),
+  Seq("notice", "removal", "punctuation"),
+  Seq("everything", "lowercase"),
+  Seq("words", "length", "removed"))
+
+tfidf("text", corpus.head, corpus)
+----
+
+Note that this snippet of code use perfect term frequencies and not the ones
+outputted by HashingTF where there were hashing collisions that's why TF-IDF
+measures differ between what is shown in table 4.19 and what would be outputted
+by IDF.
+
+We now have a feature vector ready to be fed into a decision tree algorithm.
+
+=== Decision tree classifier
+
+The last component in our Pipeline that needs building is the decision
+tree classifier which will be fed the feature vectors built by the preceding
+steps for training. A DecisionTreeClassifier Estimator is built in listing 4.31.
+
+.Creating a DecisionTreeClassifier.
+[source,scala]
+----
+val dtc = new DecisionTreeClassifier()
+  .setLabelCol(idxdLabelCol)
+  .setFeaturesCol("features")
+----
+
+We're now ready to build our pipeline!
+
+=== Pipeline
+
+We can now create the pipeline with all the components we've built until now in
+listing 4.32.
+
+.Creating our Pipeline.
+[source,scala]
+----
+val pipeline = new Pipeline()
+  .setStages(Array(labelIndexer, tokenizer, remover, hashingTF, idf, dtc, indexToLabel))
+----
+
+Since a pipeline is an Estimator we can call fit on it to train our machine
+learning model: `val model = pipeline.fit(training)`.
+
+We can sum up the steps the issues went through by the schema in figure 4.5.
+
+.Result of calling the fit method.
+image::../images/c4_pipeline_fit.png[]
+
+We can now try out our model by calling transform on our test dataset
+`val predictions = model.transform(test)`.
+
+Refer to the schema in figure 4.6 to see the journey the test dataset endured.
+
+.Result of calling the transform method.
+image::../images/c4_pipeline_transform.png[]
+
+You can compare predicted labels with the actual ones with
+`predictions.select("label", "predictedLabel").show(10)`. You'll notice that
+this sample seems to have poor classification performance. This is mainly
+because of the limite size of our sample. We'll tackle performance issues in the
+next section.
+
+Lastly, you can also save your model for later with
+`model.save("/data/issue-classifier-model")`. You'll be able to reload it
+with `PipelineModel.load("/data/issue-classifier-model")`.
+
+.Where to find the code.
+****
+The code for this section can be found in the repository under the chapter4
+folder in the _GitHubIssueClassifier.scala_ file
+https://github.com/BenFradet/spark-ml-in-action/blob/master/chapter4/src/main/scala/io/github/benfradet/spark/ml/in/action/GitHubIssueClassifier.scala.
+****
+
+== Tuning our model
+
+It's all well and good but we don't have any indicator of how performant our
+model is. Thankfully, Spark ML has a few utilities that will help us see how
+performant our model is and tune it which we'll demonstrate in this subsection.
+
+=== Model evaluation
+
+There are three evaluators in Spark ML:
+
+- `RegressionEvaluator` for regression
+- `BinaryClassificationEvaluator` for binary classification 
+- `MulticlassClassificationEvaluator` for multiclass classification 
+
+For the problem at hand, we'll use the `MulticlassClassificationEvaluator` as
+our labels can take three values (bug, enhancement and question).
+
+Each of those evaluators can use different metrics to evaluate the performance
+of the model we're investigating. In the case of multiclass classification, we
+can choose from four different metrics:
+
+- accuracy which is just the number of correctly classified observations over
+the total number of observations
+- weightedPrecision which is latexmath:[$\frac{true positives}{true positives + false positives}$]
+- weightedRecall which is latexmath:[$\frac{true positives}{true positives + false negatives}$]
+- f1 which is latexmath:[$2 \times \frac{precision \times recall}{precision + recall}$]
+
+where, when considering a label _l_, true positives is the number of
+observations that were correctly classified as label _l_, false positives
+designates the number of observations for which we predicted label _l_ but it
+turns out it was another label _u_ and false negatives are observations for
+which we predicted label _u_ but it turns out that we should have predicted
+label _l_. This will all become clearer once we go through an example in an
+instant. Note that weighted precision, weighted recall and f1 score are all
+weighted by the number of observations for each observed class.
+
+Let's consider a sample predictions with the actual labels side by side in
+table 4.20.
+
+.Comparing actual and predicted labels.
+[options="header"]
+|===
+|actual label|predicted label
+|question|bug
+|question|enhancement
+|question|question
+|bug|bug
+|question|bug
+|enhancement|enhancement
+|bug|bug
+|bug|bug
+|enhancement|bug
+|enhancement|enhancement
+|===
+
+Accuracy can be computed as latexmath:[$\frac{5}{10} = 0.5$] because there are
+five correctly classified examples and ten examples total.
+
+For the rest of the evaluation metrics, we'll refer to table 4.21 which contains
+useful results regarding table 4.20.
+
+.True positives, false positives and false negatives for each label.
+[cols="h,4*",options="header"]
+|===
+||true positives|false positives|false negatives|number of observations
+|question|1|0|3|4
+|bug|3|3|0|3
+|enhancement|2|1|1|3
+|===
+
+Let's explain the first row, for the question label:
+
+- there is one true positive because there is one row in the dataset where both
+predicted and actual label equal question
+- there are zero false positives because there are no rows where we predicted
+the question label but the actual label was something else
+- there are three false negatives because there are three rows where the actual
+label was question and we predicted something else entirely
+- the number of observations is four because there are four rows for which the
+actual label is question
+
+From table 4.21, we can compute the metrics in table 4.22.
+
+.Precision, recall and F1-score for each label.
+[cols="h,4*",options="header"]
+|===
+||precision|recall|F1-score|number of observations
+|question|1|0.25|0.4|4
+|bug|0.5|1|0.67|3
+|enhancement|0.67|0.67|0.67|3
+|===
+
+Let's, once again, explain only the first raw:
+
+- latexmath:[$P = \frac{true positives}{true positives + false positives} = \frac{1}{1 + 0} = 1$]
+- latexmath:[$R = \frac{true positives}{true positives + false negatives} = \frac{1}{1 + 3} = 0.25$]
+- latexmath:[$F1 = 2 \times \frac{precision \times recall}{precision + recall} = 2 \times \frac{0.25}{1 + 0.25} = 0.4$]
+
+We can now compute the different metrics for the whole dataset by weighting
+them:
+
+- latexmath:[$P_weighted = p_q \times \frac{n_q}{n} + p_b \times \frac{n_b}{n} + p_e \times \frac{n_e}{n} = 1 \times \frac{4}{10} + 0.5 \times \frac{3}{10} + 0.66 \times \frac{3}{10} = 0.748  $]
+- latexmath:[$R_weighted = r_q \times \frac{n_q}{n} + r_b \times \frac{n_b}{n} + r_e \times \frac{n_e}{n} = 0.25 \times \frac{4}{10} + 1 \times \frac{3}{10} + 0.66 \times \frac{3}{10} = 0.598  $]
+- latexmath:[$F1_weighted = f1_q \times \frac{n_q}{n} + f1_b \times \frac{n_b}{n} + f1_e \times \frac{n_e}{n} = 0.4 \times \frac{4}{10} +  \times \frac{3}{10} + 0.66 \times \frac{3}{10} = 0.67  $]
+where latexmath:[$metric_x$] is the metric for label x, latexmath:[$n_x$] is
+the number of observations for label x and n is the total number of
+observations.
+
+The MulticlassClassificationEvaluator works by computing those metrics in
+pretty much the same way but on distributed data: the number of true positives,
+false positives as well as number of observations (the number of false negatives
+is just the number of observations minus the number of true positives) are
+computed per class on each executor, aggregated (through a reduce operation) and
+then retrieved on the master node where the metric is finally computed.
+
+Now that we understand how the MulticlassClassificationEvaluator works, let's
+use one in listing 4.33.
+
+.Creating a MulticlassClassificationEvaluator.
+[source,scala]
+----
+import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
+val evaluator = new MulticlassClassificationEvaluator()
+  .setLabelCol(idxdLabelCol)
+  .setPredictionCol("prediction")
+  .setMetricName("accuracy")
+----
+
+We can use it as `evaluator.evaluate(predictions)`. You can also play around
+with other metrics by using the setMetricName method.
+
+I personally get 0.58, that's pretty poor accuracy for a classifier that's the
+problem we're going to tackle in the next subsections.
+
+=== Cross validation
+
+You might have noticed that we used our evaluator on the predictions DataFrame
+which contained predictions for the test DataFrame which represent 20% of the
+original data. This aims to produce unbiased performance measurements. Indeed,
+when training, the model might have developed a bias towards the data it's used.
+Therefore, we evaluate it on data it's not seen before.
+
+There is a technique more advanced that this training/test split called cross
+validation that we'll briefly explain in this subsection. Given a number _k_,
+cross validation will split a dataset in k parts containing approximately the
+same number of observations. Then, a model will be trained _k_ times with
+k - 1 parts of the data forming the training dataset and the kth part forming
+the test dataset (as we've just seen). Each of the k model will be evaluated
+on its respective test data and a final evaluation metric averaging the k
+evaluations will be produced.
+
+As an example, let's investigate the dataset in table  4.23.
+
+.A sample dataset.
+[options="header"]
+|===
+|id|text|actual label
+|1|some text|question
+|2|some text|question
+|3|some text|question
+|4|some text|bug
+|5|some text|question
+|6|some text|enhancement
+|7|some text|bug
+|8|some text|bug
+|9|some text|enhancement
+|===
+
+And let's say k = 3, because our dataset contains nine observations, we can
+split it evenly in three parts of three observations each. Each third of the
+dataset will be used consecutively as a test dataset once while the other two
+thirds serve as training data.
+
+The first iteration might select rows having ids one to six to be the training
+data. As a result, a model will be trained on this data, and it will be
+evaluated on rows with ids seven to nine. Let's say we've chosen accuracy as a
+metric and our model got 0.7. The second and third iterations take place and
+respectively get 0.52 and 0.82 accuracy scores. Those results are averaged and
+the output accuracy will consequently be of 0.68.
+
+=== Model tuning
+
+As we've seen when diving into the decision tree algorithm, there are quite a
+lot of knobs associated with the learning algorithm such as the impurity
+strategy (Gini or entropy), the maximum depth of the tree, the minimum
+information gain for a node to be kept, the minimum number of instances falling
+into a node for it to be kept or the maximum number of bins used to discretize
+a continuous features. A lot of parameters, plus a lot of possible values is
+what we call a large parameter space that we'll have to explore if we want to
+get the best model possible. Those parameters are also called hyperparameters
+which means they are parameters specific to the model which can't be learned
+during training.
+
+Of course, we could leave the default values provided by Spark and be done with
+our 58% of issues correctly labeled but we wouldn't have solved our original
+problem.
+
+Spark ML provides a way to easily tune our model in order to obtain the best by
+combining cross validation with parameter space exploration. For each
+combination of parameters we want to try, a cross validation process will take
+place and evaluation metric will be computed. Once every combination has been
+tested the model with the best metric comes out as the winner.
+
+As a result this process involves:
+
+- a Pipeline to be tuned
+- a set of parameters we want to try (also called a grid)
+- an Evaluator
+- a CrossValidator
+
+Let's see those components in action in listing 4.34.
+
+.Tuning our model.
+[source,scala]
+----
+import org.apache.spark.ml.tuning.{CrossValidator, ParamGridBuilder}
+
+// as a reminder
+val pipeline = new Pipeline()
+  .setStages(Array(labelIndexer, tokenizer, remover, hashingTF, idf, dtc, indexToLabel))
+
+val evaluator = new MulticlassClassificationEvaluator()
+  .setLabelCol(idxdLabelCol)
+  .setMetricName("accuracy") // <1>
+
+val paramGrid = new ParamGridBuilder()
+  .addGrid(dtc.maxDepth, Array(5, 7))  // <2>
+  .build()
+
+val cv = new CrossValidator()
+  .setEstimator(pipeline)
+  .setEvaluator(evaluator)
+  .setEstimatorParamMaps(paramGrid)
+  .setNumFolds(3) // <3>
+
+val cvModel = cv.fit(training)
+
+val predictions = cvModel
+  .transform(test)
+----
+<1> We choose accuracy as our evaluation metric.
+<2> We limit ourselves to trying out only maximum depths for our decision of three and five.
+<3> Our cross validation process will split our dataset in three equals parts (k = 3).
+
+We are now sure that our model is the best with respect to the parameters we've
+allowed the cross validation process to choose from.
+
+Note that we only give the cross validation process 80% of our data (the
+training DataFrame) in order to produce unbiased performance metrics when
+evaluating the test DataFrame `evaluator.evaluate(predictions)`.
+
+The code to get the best parameters is a bit cryptic and is detailed in
+listing 4.35.
+
+.Getting the best parameters out of our model.
+[source,scala]
+----
+val bestEstimatorParamMap = cvModel
+  .getEstimatorParamMaps // <1>
+  .zip(cvModel.avgMetrics) // <2>
+  .maxBy(_._2) // <3>
+  ._1 // <4>
+----
+<1> a ParamMap represent a combination of parameters being tested during the cross validation process.
+<2> We zip those parameter maps with the evaluation metrics the cross validation produced which means we now have pairs of (parameters, metric).
+<3> maxBy finds the first element which has the largest value according to the passed function in Scala, in our case the metric. Basically, we want the pair with the highest metric.
+<4> We want the first element of the pair: the parameter map.
+
+You should get something along the lines of what's in listing 4.36.
+
+.Best parameter map.
+[source,scala]
+----
+{
+  dtc_a7ab619b8560-maxDepth: 7
+}
+----
+
+So it seems that the best model was built using a decision tree with a maximum
+depth of five. We notice that the accuracy indeed got better
+`evaluator.evaluate(predictions)` now gives back 0.61.
+
+We can also include parameters not only from the machine learning model in
+our pipeline but also from other components that have parameters. For example,
+we could have built our parameter grid like the one in listing 4.37.
+
+.Building a parameter grid with parameters from our IDF component.
+[source,scala]
+----
+val paramGrid = new ParamGridBuilder()
+  .addGrid(dtc.maxDepth, Array(5, 7))
+  .addGrid(idf.minDocFreq, Array(0, 5, 10))
+  .build()
+----
+
+However, be very careful when exploring a parameter space using cross validation
+as the number of models being trained to get to the best one is quadratic:
+it is the product of the number of values in each parameter grid multiplied by
+the number of folds used during cross validation. For example, let's say I
+have the parameter grid and cross validator in listing 4.38.
+
+.An example parameter grid and cross validator.
+[source,scala]
+----
+val paramGrid = new ParamGridBuilder()
+  .addGrid(dtc.maxDepth, Array(5, 7, 9))
+  .addGrid(dtc.minInfoGain, Array(0, 0.1))
+  .build()
+
+val cv = new CrossValidator()
+  .setEstimator(pipeline)
+  .setEvaluator(evaluator)
+  .setEstimatorParamMaps(paramGrid)
+  .setNumFolds(10)
+----
+
+This will result in latexmath:[$(3 \times 2) \times 10 = 60$] models being
+trained: three possibilities for the maximum depth, two possibile values for
+the minimum information gain and ten for the number of times a cross validation
+process will train a model.
+
+== Summary
+
+When learning from a month of data (January 2016) I managed to get around 75%
+accuracy which starts to get interesting as far as classifiers are concerned
+with minimal effort: exactly the same pipeline but with a little more
+exploration of the best hyperparameters.
+
+Once a satisfactory model is built we could imagine building a tool integrating
+with GitHub that receives incoming issues on projects belonging to the people
+who subscribed to our little product and affect them a label based on what our
+model predicts.
+
+We'll try to improve on our model performance in the next chapter by studying a
+classification algorithm that builds on decision trees: random forest.
+
+== Exercises
+
+- find the next decision node
+- find the most common labels:
+ghIssues
+  .flatMap(_.labels.map(_.name))
+  .groupBy("value")
+  .count()
+  .orderBy(desc("count"))
+  .show(5)
+- how many issues per label
+issues.groupBy("label").count().show()
