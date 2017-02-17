@@ -783,10 +783,43 @@ machine learning applications.
 
 ==== Estimator
 
-Another important concept is an _Estimator_. An Estimator is something that
-learns a machine learning model from a DataFrame. It effectively produces a
-Transformer that will, in turn, add a column containing the predictions
-made by the model. Its interface can be summed up as a `fit()` method.
+Another important concept is an _Estimator_. An Estimator is an object that
+learns a machine learning model from a DataFrame. Its interface can be summed up
+as a `fit()` method through which the model is learned, it can be thought as the
+training of the model. This fit method produces a Transformer which is our
+machine learning resulting of the training phase. Those particular
+Transformers are used to add columns containing the predictions made by the
+algorithm to an existing DataFrame on which we wish to apply our machine
+learning model.
+
+If we go back to our previous example when we were trying to predict AirBnB
+prices, our function suggesting a price could be the Transformer resulting
+from a phase of learning done through an Estimator.
+
+`3 x nb of bedrooms + 0.3 x surface area + 2 x nb of stars = suggested price`
+
+We can see its possible application in tables 1.7 and 1.8.
+
+.Before applying the Transformer.
+[options="header"]
+|===
+| nb bedrooms | surface area | nr of stars
+| 2 | 49 | 2
+| 4 | 120 | 1
+| 1 | 27 | 4
+|===
+
+.After applying the Transformer.
+[options="header"]
+|===
+| nb bedrooms | surface area | nr of stars | suggested price
+| 2 | 49 | 2 | 24.7
+| 4 | 120 | 1 | 50
+| 1 | 27 | 4 | 19.1
+|===
+
+The Estimator would have come up with the function in the first place, the
+resulting Transformer is just holding it.
 
 As you will learn throughout the book, Spark ML covers a large spectrum of
 machine learning algorithms as Estimators, such as decision trees, logistic
