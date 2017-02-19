@@ -898,6 +898,19 @@ contain our predictions.
 Throughout the book, we'll use schemas so you can get the big picture of each
 machine learning application we'll build.
 
+== Download and install
+
+To download Spark, head over to http://spark.apache.org/downloads.html, and
+choose the latest version pre-built for Hadoop (which is Spark 2.1.0 pre-built
+for Hadoop 2.7.0 at the time of writing).
+
+Once you've downloaded the Spark archive you can uncompress it somewhere
+convenient on your system.
+
+I also recommend adding the content of the `bin/` folder to your PATH so that
+it's easier to access. As a matter of fact, this folder contains the REPL we
+talked about earlier called `spark-shell`.
+
 == About the book
 
 This book is not an exhaustive tour of the API proposed in Spark ML. Rather,

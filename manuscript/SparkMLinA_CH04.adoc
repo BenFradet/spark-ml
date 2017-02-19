@@ -57,6 +57,11 @@ or regression. In the case of classification, the leaves of the tree represent
 possible values the label can take whereas the internal nodes are decisions
 made on a feature that tries to improve our classification.
 
+To ease the process of understanding the algorithm, we're going to leave the
+GitHub use case for the moment and go back to the Titanic dataset of
+chapter two. Don't worry though, we'll come back to this interesting real world
+use case a bit later in the chapter.
+
 It can easily be represented as a flowchart. For example, if we go back to the
 Titanic dataset of chapter two where, as a reminder, the goal was to predict
 whether or not a passenger survived based on a few characteristics like age,
