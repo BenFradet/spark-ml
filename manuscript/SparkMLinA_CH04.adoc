@@ -14,26 +14,43 @@ This chapter covers
 - Classification and how it is used
 - Understanding what a decision tree is and how it works in a distributed
 fashion
-- Transforming raw data to be able to use a decision tree
+- Transforming raw data to use a decision tree
 - Tuning our model to get the best results possible
 
-In this chapter, we will try to ease the burden of maintainers of open source
-projects on GitHub by building a machine learning model that will be able to
-find the most appropriate label for an issue.
+In this chapter, we will use Spark ML to try to ease the maintenance burden of
+open source projects on GitHub by building a machine learning model that will be
+able to find the most appropriate label for an issue.
 
-The goal is to alleviate the overhead maintainers have to face when
-dealing with an incoming issue. Typically, a user will come in and log an issue.
-This issue will be read once by the maintainer who will label it appropriately.
-When this maintainer has enough time to spend on this particular issue, she
-will have to become familiar with the issue once again in order to solve it.
-A lot of the time, maintainers skip the first step altogether and the ability
-of labelling issues in GitHub goes, as a result, unused. We're going to try and
-solve step one with machine learning so that if a maintainer has only enough
-time to answer a question he can directly look at the issues which have already
-been labelled "question" by our model.
+Put simply, the goal is to alleviate the overhead maintainers face when
+dealing with an incoming GitHub issue. Usually, a user of a project hosted on
+GitHub logs an issue, which is then read once by the maintainer who labels it
+appropriately. When the maintainer has enough time to spend on this particular
+issue, she will have to become familiar with the issue again to solve it.
+Frequently, maintainers skip the first step; and as a result the labelling
+feature On GitHub goes unused. We're going to try and solve this issue with
+machine learning, so that if a maintainer has only enough time to answer a
+question, he can look directly at the issues that are labeled "question" by our
+model.
 
-We will limit ourselves to the prediction of three labels: question,
-enhancement and bug because they are present by default when you create a
+In figures 4.1 and 4.2 we can visualize the value of the machine learning model
+we have yet to build.
+
+.The current workflow when logging an issue on GitHub.
+image::../images/c4_app_before.svg[]
+
+The user (the solid-lined smiley) comes in and logs the issue, this issue is
+labeled by the maintainer represented as a dashed-line smiley, it's then fixed
+by this same maintainer.
+
+.The workflow we're aiming for when logging an issue on GitHub.
+image::../images/c4_app_after.svg[]
+
+Our model, in the dashed cloud, will be in charge of the labelling now in dashed
+lines. The fixing of the issue will still be taken care of by the maintainer
+because machine learning models can't fix bugs, yet.
+
+We'll limit the model to predicting three labels question,
+enhancement, and bug because they are present by default when you create a
 repository on GitHub and are the most commonly used as we'll see when we'll
 investigate the data.
 
@@ -43,412 +60,474 @@ In machine learning terms, we want to build a model that is able to predict the
 most appropriate issue label (our label) given the text contained in the issue
 (our features).
 
-As in chapter two, this is also a supervised learning problem because it can
-be perceived as building a function that takes the text of the issue as input
-and outputs one of question, bug or enhancement.
+This is a supervised learning problem (as in chapter two) because it builds a
+function that takes the text of the issue as input and outputs a label
+(question, bug, or enhancement).
 
-Moreover, since the set of possible values our function can produce is finite
-(bug, question or enhancement) this is a classification problem.
+Because the set of possible values our function can produce is finite
+(bug, question or enhancement) this also is a classification problem.
+
+There exists many classification algorithms out there many of which are
+supported by Spark ML but, in this chapter, we're going to focus on one of the
+most fundamental: decision trees.
 
 == The decision tree algorithm
 
-Decision trees can be used as a machine learning model either for classification
-or regression. In the case of classification, the leaves of the tree represent
-possible values the label can take whereas the internal nodes are decisions
-made on a feature that tries to improve our classification.
+You might have used decision trees or flowcharts outside of a machine learning
+context in the past as they are a fairly popular tool to model a troubleshooting
+process, or complex nested if statements (we've all encountered those,
+unfortunately).
 
-To ease the process of understanding the algorithm, we're going to leave the
-GitHub use case for the moment and go back to the Titanic dataset of
-chapter two. Don't worry though, we'll come back to this interesting real world
-use case a bit later in the chapter.
+It turns out that decision trees can also be used as a machine learning models
+either for classification or regression. In the case of classification, the
+leaves of the tree represent possible values the label can take whereas the
+internal nodes are decisions made on a feature that tries to improve our
+classification.
 
-It can easily be represented as a flowchart. For example, if we go back to the
-Titanic dataset of chapter two where, as a reminder, the goal was to predict
-whether or not a passenger survived based on a few characteristics like age,
-gender or passenger class. We could imagine a very simple classification model
-such as the one shown in figure 4.1.
+Decision tree models can easily be represented as flowcharts.
+For example, we could imagine a very simple classification model for our problem
+of classifiying GitHub such as the decision tree shown in figure 4.3.
 
-.A very simple decision tree to tell whether a passenger survived the Titanic.
-image::../images/c4_titanic_dt.png[]
+.A very simple decision tree to tell the label of a GitHub issue.
+image::../images/c4_gh_dt.svg[]
 
-Our very simple decision tree predicts that a passenger survived if she or he
-was an adult. Here, the unique internal node is a decision about the age
-feature. When we want to know what the decision tree would predict for a new
-observation, we just give this observation as input to the root of the tree and
-we follow along the decisions according to the values of the features for this
-new observation.
+Our simple decision tree predicts that an issue should be labeled as a question
+if there are more than two question marks in the body of the issue. If not, it
+should be labeled according to the author of the issue. If the author is the
+owner of the repository, our model will output that the label should be
+enhancement. Otherwise, it'll be labelled as a bug.
+
+When we want to know what the decision tree would predict for a new observation,
+we just give this observation as input to the root of the tree and we follow
+along the decisions according to the values of the features for this new
+observation.
+
+Obviously, the decision tree learning algorithm leverages all the features made
+available to it (like the text itself) and, as a result, will contain much more
+than two decision nodes. That's what we'll study next.
 
 === Decision tree learning
 
-The model we just buit relied on our own very simple heuristic, however, we
+The "model" we just built relied on our own simple heuristic; however, we
 still don't know how a decision tree classifier might arrive at this result (or
 a far better one).
 
-A decision tree classifier can be created in Spark ML with the listing 4.1.
+The process of learning, or building the decision tree, can
+be broken down as the following process: finding the best decision to make from
+the current set of observations, deciding if this decision has to be turned into
+a decision node or a leaf node according to a few criteria. If we choose to
+create a decision node, we go back to the "finding the best decision" step until
+we're left with only leaves.
 
-.Creating a decision tree classifier.
-[source,scala]
-----
-import org.apache.spark.ml.classification.DecisionTreeClassifier
-val dtc = new DecisionTreeClassifier()
-----
+Each best decision corresponds to a binary split of the dataset according to a
+feature value. Intuitively, the best decisions are the ones that most
+discriminate examples with respect to the class: a decision that split a dataset
+in two where each example in each subset has the same class tends to be an
+extremely good decision.
 
-The process of learning, or building the decision tree, can be broken down as
-the following sequence of steps:
+If we go back to our simple decision tree, we've first estimated that the best
+decision to make was to split our initial dataset in two according to the number
+of question marks feature: the issues that had more than two question marks on
+one side and those that had less or equal to two on the other. We then assumed,
+for the issues containing more than two question marks that the split was
+satisfactory and that we could create a leaf node containing the question label.
+We then turned our attention to the issues that had less or equal to two
+question marks. We chose to split them according to the author of the issue:
+whether it was the owner of the repository or not. Finally, we deemed both
+resulting sets of issues (issues with less than two question marks and for which
+the author was the owner on one side and those for which the author wasn't the
+owner) satisfactory with respect to our yet-to-be-defined criterion and created
+leave nodes with the enhancement and bug labels respectively.
 
-1. All the features are bucketed or binned. For categorical features, like the
-class the passenger was in, there is usually one bin for every value the feature
-can take. Here, this would result in three bins: first, second and third class.
+We've just scratched the surface of how the algorithm works, we'll now detail
+each of those steps in turn to gain a deeper understanding of how it behaves.
+
+=== Bucketing
+
+One step we didn't mention earlier is bucketing. All the features of our dataset
+are bucketed or binned. The need for this step arises from the fact that there
+are as many ways to split an ordered set of values in two as there are values.
+This is a problem when it comes to features with high arities such as continuous
+features where there can be as many different values as there are observations.
+Because one way to split a set of values a feature can take in two directly
+translates into a possible decision we could make and because we need to make
+the best of those decisions we need to evaluate every one of them. As you might
+sense this quickly becomes intractable if there are too many possible decisions
+to evaluate and bucketing those features solves that.
+
+An example of a continuous feature with high-arity would be the number of words
+contained in a GitHub issue. We directly notice that the raw number wouldn't
+really be useful, buckets such as short, medium-sized and large would be better.
+There can also be discrete features with high-arity such as which repository the
+issue belongs to.
+
+Now that we understand why this process is necessary, we'll get into how each
+feature is binned by Spark ML according to its type.
+
+For categorical features, like the author of the issue, there is usually one bin
+for every value the feature can take. Here, this would result in three bins:
+owner, contributor and visitor (didn't contribute to the project in the past).
+
 For continuous features, bins calculations are done on a randomly-chosen sample
 of data. For each feature, if there are less distinct values, in this sample,
-than a preset maximum number of bins (let's call it `maxBins`), there will be
+than a preset maximum number of bins (called `maxBins`), there will be
 one bucket per distinct value. However, if there are more distinct values than
 maxBins, maxBins buckets will be built so that the sampled data is more or less
 uniformly distributed across those buckets. If we go back to our example, the
-bucketing of the Age feature could result in: child (0-12 years), teen (13-17),
-adult (18-35), middle-age (36-59) and senior (60 and more) if maxBins = 5 and
-assuming the people's age follow a uniform distribution across those buckets.
-This maximum number of bins can be set with the code in listing 4.2.
+bucketing of the number of question marks feature could result in: none (0),
+random question appears (1), questiony (2-3), weirded out about the behavior of
+something (4+) if maxBins = 4 and assuming the number of question marks follows
+a uniform distribution across those buckets.
 
-.Setting a maximum number of bins for the bucketing of the continuous features.
-[source,scala]
-----
-import org.apache.spark.ml.classification.DecisionTreeClassifier
-val dtc = new DecisionTreeClassifier()
-  .setMaxBins(32)
-----
+The bucketing of a few issues is shown in figure 4.4.
 
-[start=2]
-2. Once those buckets are built, we'll try to find the best split, which can
-be thought of as the best decision we can make about classifying our
-observations, across all features according to an information gain metric which
-we'll detail next.
-3. If the information gain for the best split we just computed is inferior
-to some threshold, we'll create a leaf node with the most common label
-in the data that arrived to this node. For example, if
-there are 72% of people who are not adult that survived, the label of the
-created leaf node will be survived. On the other hand, if there are only 36% of
-adult people that survived, the leaf node produced will contain the did not
-survive label. You can set the minimum information gain if you follow listing
-4.3. Don't worry if the information gain concept seems vague, it'll be properly
-defined in the next subsection.
+.The process of bucketing issues according the number of question marks feature.
+image::../images/c4_buckets.svg[]
 
-.Setting a minimum information gain for each decision node.
-[source,scala]
-----
-import org.apache.spark.ml.classification.DecisionTreeClassifier
-val dtc = new DecisionTreeClassifier()
-  .setMinInfoGain(0.01)
-----
+Note that this process is done only once at the start of the algorithm.
 
-[start=4]
-4. If there are less than a predefined number of observations falling into a
-particular node, we'll turn this node into a leaf node containing the most
-common label among those observations. You can also change this parameter thanks
-to the code shown in listing 4.4.
+=== Finding the best decision
 
-.Setting a minimum number of observations per leaf node.
-[source,scala]
-----
-import org.apache.spark.ml.classification.DecisionTreeClassifier
-val dtc = new DecisionTreeClassifier()
-  .setMinInstancesPerNode(10)
-----
+Once those buckets are built, we'll try to recursively find the best split,
+which can be thought of as the best decision we can make about classifying our
+observations, across all features.
 
-[start=5]
-5. If the depth of the decision node produced exceeds the predefined maximum
-depth of the tree, a leaf node is created with the label which has the majority,
-this parameter can be set with the following listing (4.5).
+Intuitively, how would you measure the performance of a decision? In decision
+trees, this is done by comparing the subset of data before the decision and the
+subsets produced by the decision. Does our decision advance the classification
+process? In other terms, does our decision produce subsets of data where the
+class is more homogeneous than what was before the decision?
 
-.Setting the maximum depth of the tree.
-[source,scala]
-----
-import org.apache.spark.ml.classification.DecisionTreeClassifier
-val dtc = new DecisionTreeClassifier()
-  .setMaxDepth(5)
-----
+Ideally, when running down our decision tree with an example to classify, we'd
+arrive at a leaf node predicting the correct class. This is influenced by the
+fact that, when building our decision tree, we had as many examples falling into
+this leaf with this correct class as possible.
 
-[start=6]
-6. If all the examples coming out of the best decision have the same label,
-we'll create a leaf node with this label.
-7. Otherwise, we create a decision node based on the best split and go back to
-step two.
+To formalize those ideas, we'll define a few concepts next.
 
-=== Information gain metrics
+==== Purity / impurity
 
-As we just mentioned, we need a way to find the best decision possible in order
-to construct each node in the tree. To do so, we'll measure the homogeneity of
-the classes of the two subsets produced by a decision node, we talk about
-purity or impurity of a dataset.
+To measure how homogeneous a dataset is with regards to its class, we will
+define purity. A pure dataset contains examples that all belong to the same
+class. For example, a subset of the GitHub issues which have all been labeled
+question would be pure. Conversely, a dataset is impure if it contains examples
+that don't belong to the same class. In practice, this is not a binary (pure or
+impure) process as we can measure the impurity of a dataset by looking at the
+different proportions of examples belonging to each class.
 
-There are two strategies to measure the impurity of a subset, which we'll
-detail now.
+There exists two strategies to measure the impurity of a dataset: Gini impurity
+and entropy.
 
 ==== Gini impurity
 
-It measures "how often a randomly chosen element from the set would be
-incorrectly labeled if it was randomly labeled according to the distribution of
-labels in the subset", according to Wikipedia. Hard to grok, isn't it? Defining
-it in mathematical terms and walking through an example will make everything
-clearer.
+According to Wikipedia, Gini impurity measures "how often a randomly chosen
+element from the set would be incorrectly labeled if it was randomly labeled
+according to the distribution of labels in the subset". Hard to grok, isn't it?
+Defining it in mathematical terms and walking through an example will make
+everything clearer.
 
-For a subset with _J_ classes, _i ∈ 1, 2, ... J_ being the ith class and fi
-being the fraction of examples labeled with the _i_ class, it's defined as:
+For a subset with _J_ classes, _i ∈ 1, 2, ... J_ being the _i^th^_ class and
+_f~i~_ being the fraction of examples labeled with the _i_ class, it's defined
+as:
 
 latexmath:[$Gini \: impurity = 1 - \sum_{i=1}^J f_i^2$]
 
-Let's walk through an example with a sample extracted from the Titanic dataset
-seen in chapter two shown in table 4.1.
+We see that, for a pure dataset (every example belonging to the same class), we
+get an impurity of 0.
 
-.Example dataset.
+Let's walk through an example with a fictious dataset of GitHub issues with
+fictious features in table 4.1.
+
+.Example dataset of ten GitHub issues described with their number of question marks and author type.
 [options="header"]
 |===
- 3+^.^h|Features|Class
-|Gender|Class|Port|Survived
-|M|3rd|Southampton|No
-|F|3rd|Southampton|No
-|F|3rd|Cherbourg|Yes
-|M|1st|Cherbourg|Yes
-|M|3rd|Cherbourg|No
-|F|1st|Cherbourg|Yes
-|M|1st|Southampton|No
-|M|1st|Cherbourg|No
-|M|3rd|Queenstown|No
-|M|1st|Cherbourg|Yes
+ 2+^.^h|Features|Class
+|Number of ?|Author type|Label
+|1|Owner|Enhancement
+|1|Owner|Enhancement
+|1|Visitor|Question
+|0|Visitor|Bug
+|1|Visitor|Question
+|0|Visitor|Bug
+|0|Owner|Bug
+|0|Visitor|Enhancement
+|1|Contributor|Enhancement
+|0|Visitor|Bug
 |===
 
-Since six people out of ten survived and four did not, we get the following
-impurity:
+Because four out of ten issues have the Enhacement label, two have the Question
+label and four have the Bug label , we get the following impurity:
 
-latexmath:[$Gini \: impurity = 1 - (\frac{6}{10}^2 + \frac{4}{10}^2 ) = 0.48$]
+latexmath:[$Gini \: impurity = 1 - (\frac{4}{10}^2 + \frac{4}{10}^2 + \frac{2}{10}^2) = 0.64$]
 
-Since, we're looking for a pure subset, we'd like the Gini impurity to be zero.
+Because, we're looking for a pure subset, we'd like the Gini impurity to be zero.
 
 ==== Entropy
 
-The binary entropy function can also be used as a measure of impurity for a
-binary class that can take value a or b, it is shown in figure 4.2.
+We can also measure the purity of a dataset by computing its entropy. The notion
+of entropy used here comes from the information theory field. Although a full
+explanation is out of the scope of this book, it's good to know however how it
+works in the case of two classes.
 
-.Entropy as a function of Pr(X = a).
-image::../images/c4_entropy.png[]
+Let's take the example of two classes 1 and 0, the entropy as a function of the
+probability that the class associated to an example is 1 (Pr(X=1)) is shown
+in figure 4.5.
 
-As we can see, it's at his maximum when Pr(X = a) is at 0.5 (and consequently
-Pr(X = b) = 0.5 too) which means maximum uncertainty: equal probability of
-being either a or b. It's at its minimum when either Pr(X = a) = 0 (Pr(X = b) =
-1) or Pr(X = a) = 1 (Pr(X = b) = 0) which means complete certainty.
+.Entropy as a function of Pr(X = 1).
+image::../images/c4_entropy.svg[]
+
+Note that, because we have two classes, Pr(X = 0) + Pr(X = 1) = 1.
+
+As we can see, it's at its maximum when Pr(X = 1) is at 0.5 (and consequently
+Pr(X = b) = 0.5 too) which means maximum impurity: equal probability of the
+class being either 1 or 0. It's at its minimum when either Pr(X = 1) = 0
+(Pr(X = 0) = 1) or Pr(X = 1) = 1 (Pr(X = 0) = 0) which means complete purity.
 
 As a result, we will look for low entropies when evaluating the purity of a
 subset of data.
 
-It can be generalized for J classes and computed as:
+It can be generalized for _J_ classes and computed as:
 
 latexmath:[$Entropy = - \sum_{i = 1}^J f_i \times log_2(f_i)$]
 
 If we compute the entropy of our example dataset in table 4.1, we have:
 
-latexmath:[$Entropy = - (\frac{6}{10} \times log_2(\frac{6}{10}) + \frac{4}{10} x log_2(\frac{4}{10})) = 0.97$]
+latexmath:[$Entropy = - (\frac{4}{10} \times log_2(\frac{4}{10}) + \frac{4}{10} \times log_2(\frac{4}{10}) + \frac{2}{10} \times log_2(\frac{2}{10})) = 1.52$]
 
 ==== Information gain
 
 Now that we understand the two strategies used to measure the purity of a
 subset, we can tackle the problem of evaluating decisions. We'll do so by
-defining information gain which can be groked in simple terms by: are the
+defining information gain which can be grokked in simple terms by: are the
 subsets my decision produced purer that the subset I had before the decision.
 Information gain relies on a strategy for measuring purity such as Gini or
 entropy.
-
-If we go back to our simple decision tree repeated in figure 4.3.
-
-.A very simple decision tree to tell whether a passenger Survived the Titanic.
-image::../images/c4_titanic_dt.png[]
-
-Are the two subsets produced by our decision (adults on one side, children on
-the other) more homogenous with regards to the class (survived or not) than the
-one we had before the decision (every single example since it was the first
-decision node we built).
 
 It can be measured as the difference between the purity of the parent subset
 and the weighted sum of the purity of the two children.
 
 latexmath:[$Information \: gain = purity \: metric \: of \: the \: parent - \sum purity \: metrics \: of \: the \: children$]
 
-==== Building our first decision node
+If we go back to our simple decision tree repeated in figure 4.6.
+
+.A very simple decision tree to predict the label of a GitHub issue.
+image::../images/c4_gh_dt.svg[]
+
+Are the two subsets produced by our first decision (issues with less than two
+question marks on one side and the rest on the other side) more homogenous with
+regards to the class (the label of the issue) than the one we had before the
+decision (every single example because it was the first decision node we built).
+
+The best decision will be the one with the highest information gain.
+
+Now that we have the tools to find the best decision we can make, we need to
+find whether it's worth continuing the branch of the tree by creating a decision
+node or if we're better off stopping the branch here and creating a leaf node.
+
+=== Decision node or leaf node?
+
+When determining the type of node we need to construct (leaf or decision), there
+are multiple parameters we need to take into account.
+
+==== Information gain threshold
+
+If the information gain for the best split we just computed is inferior
+to some threshold, we'll create a leaf node with the most common label
+in the data that arrived to this node.
+
+This threshold is here to try to keep the decision tree simple. Indeed, it's is
+useless to keep creating decision nodes if we don't gain any information, we
+might as well create a leaf node and call it a day.
+
+==== Minimum number of instances
+
+If there are less than a predefined number of observations falling into
+either child produced by a decision node, we'll turn this node into a leaf node
+containing the most common label among those observations.
+
+Here as well, the goal is to keep the decision tree simple. It's not worth the
+effort of creating decision nodes if the decision produce a child with only one
+observation. Even though it might be the best decision possible, it will over
+complicate the model for simply no benefits.
+
+For example, if we fix this minimum number of observations to 100 and there are
+only eight issues with more than two question marks we create a leaf node. Let's
+say that among those 100 issues, 52 have the Question label, the leaf node
+will accordingly contain the Question label.
+
+==== Maximum depth of the decision tree
+
+If the depth of the decision node produced exceeds the predefined maximum
+depth of the tree, a leaf node is created with the label which has the majority.
+
+.Depth of a tree.
+****
+If you're feeling rusty regarding data structures, the depth of a tree is
+defined as the biggest length of the path from a leaf to the root of the tree.
+
+Our example decision tree has a depth of two with the root being the first
+decision node (Number of "?" >= 2) and the farthest leaves being the enhancement
+and bug nodes.
+****
+
+==== Every example has the same class
+
+If all the examples coming out of the best decision have the same class,
+we'll create a leaf node with this class.
+
+For example, if all issues having more than or equal to two question marks have
+the question label, we can stop our investigation right here and create a leaf
+node with the quesiton label.
+
+==== Otherwise leaf node
+
+If none of those criteria are met, we create a decision node and not a leaf
+and we go back to finding the best decisions for the subsets our decision node
+just created.
+
+=== Stopping criterion
+
+Our tree is finished once the leaves of our tree are leaf nodes (where a class
+is affected). In other words, there are no decisions left that need evaluation.
+
+=== Building our first decision node
 
 Now that we have all the tools let's build the first node of a decision tree if
 we were to build a classifier for the dataset in table 4.2.
 
-.Example dataset.
+.Example dataset of ten GitHub issues described with their number of question marks and author type.
 [options="header"]
 |===
- 3+^.^h|Features|Class
-|Gender|Class|Port|Survived
-|M|3rd|Southampton|No
-|F|3rd|Southampton|No
-|F|3rd|Cherbourg|Yes
-|M|1st|Cherbourg|Yes
-|M|3rd|Cherbourg|No
-|F|1st|Cherbourg|Yes
-|M|1st|Southampton|No
-|M|1st|Cherbourg|No
-|M|3rd|Queenstown|No
-|M|1st|Cherbourg|Yes
+ 2+^.^h|Features|Class
+|Number of ?|Author type|Label
+|1|Owner|Enhancement
+|1|Owner|Enhancement
+|1|Visitor|Question
+|0|Visitor|Bug
+|1|Visitor|Question
+|0|Visitor|Bug
+|0|Owner|Bug
+|0|Visitor|Enhancement
+|1|Contributor|Enhancement
+|0|Visitor|Bug
 |===
 
-As we've just seen, the Gini impurity for this dataset is 0.48 and its entropy
-is 0.97.
+As we've just seen, the Gini impurity for this dataset is 0.64 and its entropy
+is 1.52.
 
-Now, we have to evaluate every possible split of our three features (gender,
-class, port). Let's start with the gender feature, if we were to split based
-on sexe we would obtain two datasets: one for the women and one for the men,
-those are detailed in table 4.3 and 4.4.
+Now, we have to evaluate every possible split of our two features (number of
+question marks and author type). Let's start with the number of question marks
+feature, because this feature takes only two values in our dataset, there is
+only one possible split: zero question marks on one side and 1 question mark on
+the other side. The resulting subsets are detailed in table 4.3 and 4.4.
 
-.Split of the example dataset on gender with only women.
+.Split of the example dataset on number of question marks when it's 0.
 [options="header"]
 |===
-|Gender|Survived
-|F|No
-|F|Yes
-|F|Yes
+|Number of ?|Label
+|0|Bug
+|0|Bug
+|0|Bug
+|0|Enhancement
+|0|Bug
 |===
 
-For brevity, we only kept the feature we're splitting on (here gender) and
-the class (survived).
+For brevity, we only kept the feature we're splitting on (here number of
+question marks) and the class (Label).
 
 If we compute the Gini impurity for this subset we'd obtain:
 
-latexmath:[$1 - (\frac{2}{3}^2 + \frac{1}{3}^2) = 0.44$]
+latexmath:[$1 - (\frac{4}{5}^2 + \frac{1}{5}^2) = 0.32$]
 
 Same goes for the entropy:
 
-latexmath:[$-(\frac{1}{3} * log_2(\frac{1}{3}) + \frac{2}{3} * log_2(\frac{2}{3})) = 0.92$]
+latexmath:[$-(\frac{4}{5} \times log_2(\frac{4}{5}) + \frac{1}{5} \times log_2(\frac{1}{5})) = 0.72$]
 
-From now on, we won't detail the calculations as they are too redudant.
+Because there are no issues labeled questions in this subset we omit it from our
+calculations.
 
-The other split (the dataset with only the males) can be found in table 4.4.
+From now on, we won't detail the calculations.
 
-.Split of the example dataset on gender with only men.
+The other split (the dataset containing the issues with 1 question mark) can be
+found in table 4.4.
+
+.Split of the example dataset on number of question marks when it's 1.
 [options="header"]
 |===
-|Gender|Survived
-|M|No
-|M|Yes
-|M|No
-|M|No
-|M|No
-|M|No
-|M|Yes
+|Number of ?|Label
+|1|Enhancement
+|1|Enhancement
+|1|Question
+|1|Question
+|1|Enhancement
 |===
 
-The Gini impurity is 0.41 and the entropy is 0.86.
+The Gini impurity for this dataset is 0.48 and the entropy is 0.97.
 
 Now that we have the impurity measurements before the split and after, we can
-compute the information gain this split would bring us. We note information
-gain IG(Gender) the information gain on the gender feature for our particular
-dataset.
+compute the information gain for this split. We note information
+gain IG(Nr?) the information gain on the number of question marks feature for
+our particular dataset as follows:
 
-latexmath:[$IG_{entropy}(gender) = 0.97 - (\frac{3}{10} \times 0.92 + \frac{7}{10} \times 0.86) = 0.09$]
+latexmath:[$IG_{gini}(Nr?) = 0.64 - (\frac{5}{10} \times 0.32 + \frac{5}{10} \times 0.48) = 0.24$]
 
-latexmath:[$IG_{gini}(gender) = 0.48 - (\frac{3}{10} \times 0.44 + \frac{7}{10} \times 0.41) = 0.06$]
+latexmath:[$IG_{entropy}(Nr?) = 1.52 - (\frac{5}{10} \times 0.72 + \frac{5}{10} \times 0.97) = 0.68$]
 
 We effectively subtract the impurities of the children from the one of the
 parent. As its name implies we're looking for the highest information gain.
 
-Let's move on to the class feature and let's split on it (since there are no
-passengers in the second class we omit it). Those splits can be seen in table
-4.5 and 4.6.
+Let's move on to the author type feature and let's split on it. Those splits
+can be seen in table 4.5, 4.6 and 4.7.
 
-.Split of the example dataset on passenger class with third class passengers only.
+.Split of the example dataset on author type with owner only.
 [options="header"]
 |===
-|Class|Survived
-|3rd|No
-|3rd|No
-|3rd|Yes
-|3rd|No
-|3rd|No
+|Author type|Label
+|Owner|Enhancement
+|Owner|Enhancement
+|Owner|Bug
 |===
 
-The Gini impurity for this subset is 0.32 and its entropy 0.72.
+The Gini impurity for this subset is 0.44 and its entropy 0.92.
 
-.Split of the example dataset on passenger class with 1st class passengers only.
+.Split of the example dataset on author type with visitor only.
 [options="header"]
 |===
-|Class|Survived
-|1st|Yes
-|1st|Yes
-|1st|No
-|1st|No
-|1st|Yes
+|Author type|Label
+|Visitor|Question
+|Visitor|Bug
+|Visitor|Question
+|Visitor|Bug
+|Visitor|Enhancement
+|Visitor|Bug
 |===
 
-Gini impurity = 0.48, entropy = 0.97.
+The resulting Gini impurity is 0.61 for this dataset. Its entropy is 1.46.
 
-If we compute the information gain with the two available impurities we get:
-
-latexmath:[$IG_{entropy}(class) = 0.97 - (\frac{5}{10} \times 0.72 + \frac{5}{10} \times 0.97) = 0.13$]
-
-latexmath:[$IG_{gini}(class) = 0.48 - (\frac{5}{10} \times 0.32 + \frac{5}{10} \times 0.48) = 0.08$]
-
-We get slightly better information gains, so far the passenger class would
-produce the best decision node. Finally, let's find out the information gains
-relating to the port feature. We'll find the datasets resulting from this split
-in tables 4.7, 4.8 and 4.9.
-
-.Split of the example dataset on port with people coming from Southampton only.
+.Split of the example dataset on author type with contributor only.
 [options="header"]
 |===
-|Port|Survived
-|S|No
-|S|No
-|S|No
+|Contributor|Enhancement
 |===
 
-Since every example in this subset belongs to the same class (did not survive),
-it is pure and its impurity is consequently 0 no matter the computation
-strategy (Gini or entropy).
+Here, both Gini impurity and entropy equal zero because the dataset is pure (all
+examples belong to the same class).
 
-.Split of the example dataset on port with people coming from Cherbourg only.
-[options="header"]
-|===
-|Port|Survived
-|C|Yes
-|C|Yes
-|C|No
-|C|Yes
-|C|No
-|C|Yes
-|===
+If we compute the information gain with the two impurities we get:
 
-Its Gini impurity is 0.44 and its entropy is 0.92.
+latexmath:[$IG_{entropy}(author \: type) = 0.64 - (\frac{3}{10} \times 0.44 + \frac{6}{10} \times 0.61 + \frac{1}{10} \times 0) = 0.14$]
 
-.Split of the example dataset on port with people coming from Queenstown only.
-[options="header"]
-|===
-|Port|Survived
-|Q|No
-|===
+latexmath:[$IG_{gini}(author \: type) = 1.52 - (\frac{3}{10} \times 0.92 + \frac{6}{10} \times 1.46 + \frac{1}{10} \times 0) = 0.37$]
 
-Because there is only one example the dataset is pure.
-
-Computing the information gains for this split will result in the following:
-
-latexmath:[$IG_{entropy}(port) = 0.97 - (\frac{3}{10} \times 0 + \frac{6}{10} \times 0.92 + \frac{1}{10} \times 0) = 0.42$]
-
-latexmath:[$IG_{gini}(port) = 0.48 - (\frac{3}{10} \times 0 + \frac{6}{10} \times 0.44 + \frac{1}{10} \times 0) = 0.22$]
-
-Because a split on the port feature present the highest information gains, we
-know that our first decision node will be on the port feature as shown in
-figure 4.3.
+We now know that the best split is based on the number of question marks because
+it has the highest information gain. The resulting node is shown in figure 4.7.
 
 .The first decision node in our decision tree
-image::../images/c4_first_node.png[]
+image::../images/c4_first_node.svg[]
 
-Furthermore, because the subsets for Queenstown and Southampton were pure
-(everybody died), we've reached a stopping criterion which means a leaf is
-created.
-
-This process continues for the Cherbourg subset until we reach one of the
-stopping conditions we listed earlier.
+This process continues for each resulting subset until we reach one of the
+leaf conditions we listed earlier. Finishing building the decision tree is given
+as an exercise.
 
 Now that we understand how to build a decision tree on a small dataset, let's
 see how it works with distributed data inside Spark ML.
@@ -460,45 +539,37 @@ distributed data following the same process we described during our explanation
 of local decision trees.
 
 Next, we'll describe a typical cycle of a distributed decision tree as it is
-implemented in Spark ML using the schema in figure 4.4.
+implemented in Spark ML using the schema in figure 4.8.
 
 .A cycle in the distributed decision tree algorithm in Spark ML.
-image::../images/c4_algo.png[]
+image::../images/c4_algo.svg[]
 
-The node stack being maintained on the driver contains the list of nodes in
-our decision tree that need splitting. When the algorithm starts, we only need
-to split the root containing all the observations.
+The stack (the LIFO data structure) of nodes being maintained on the driver
+contains the list of nodes in our decision tree that need splitting. When the
+algorithm starts, we only need to split the root containing all the
+observations.
 
 The first step will be to pop some nodes for splitting. The number of nodes
 popped depends on an estimation of how much memory will be needed to compute
-information gain for this node. This estimation is then compared to a
-`maxMemoryInMB` parameter which defaults to 256MB, it can be set with the code
-in listing 4.6.
+information gain for this node.
 
-.Setting the maximum memory in Mb used for the computations of information gain in each cycle of the algorithm
-[source,scala]
-----
-import org.apache.spark.ml.classification.DecisionTreeClassifier
-val dtc = new DecisionTreeClassifier()
-  .setMaxMemoryInMB(256)
-----
-
-Once the nodes have been selected, the nodes to split are sent to the executors.
-The current decision tree model containing the splits that have been built so
-far is also sent. For the first iteration, this model only contains the root
-node. This process is denoted as step two in the schema in figure 4.4.
+When the nodes have been selected, they are sent to the executors for
+distributed evaluation. The current decision tree model containing the splits
+that have been built so far is also sent. For the first iteration, this model
+only contains the root node. This process is denoted as step two in the schema
+in figure 4.8.
 
 For each node received, impurity calculations are done for each (feature, split)
 combination possible on the executors. Those calculations are done on the
-subset of data available on this executor. This step (the third in the schema)
-is analogous to what we've done in the example on how to build a deicion node.
+partition of data available on this executor. This step (the third in the schema)
+is analogous to what we've done in the example on how to build a decision node.
 If we go back to this example, we could imagine having received the root node to
 split (which has every observation) and having access to only those ten
 examples, we subsequently tried to split the dataset in every kind of way
-according to its features (gender, class and port) and its corresponding splits
-(male/female for the gender feature, first/third for the class, Q/S/C for the
-port), for each of those combinations we computed the impurity of the resulting
-subset.
+according to its features (number of question marks and author type) and its
+corresponding splits (1/0 for the number of question marks,
+owner/contributor/visitor for the author type), for each of those combinations
+we computed the impurity of the resulting subsets.
 
 What we haven't done yet is computing information gains. To do this we need to
 have all the impurities corresponding to a (node, feature, split) triple
@@ -508,12 +579,12 @@ thanks to a reduce operation where the key is the (node, feature, split)
 triple (all impurities for this triple will land on the same node) and the
 impurities are aggregated together. This is represented by step four
 in the schema where impurities are sent across the different nodes based on
-their key. Since all impurity stats for a triple is present on some single
+their key. Because all impurity stats for a triple is present on some single
 node as well as the current model, the information gain is calculated and
 a best split is chosen for each node. From this information gain, we're able
 to choose the best split for each node.
 
-Those best splits are then sent back to the driver in step five in figure 4.4.
+Those best splits are then sent back to the driver in step five in figure 4.8.
 For each node that was sent a new split is created. If some stopping criterion
 is reached such as the information gain being too low, the number of
 observations falling into this split being too low, the depth of the new node
@@ -522,13 +593,43 @@ split belonging to the same class, a leaf node is created. Otherwise, a node is
 created and pushed onto the stack of nodes that need splitting (step six).
 
 This process goes on until the node stack is empty which means that our decision
-tree is complete with respect to the stopping criterion we set.
+tree is complete with respect to the stopping criteria we set.
 
-Since the underlying data structure for storing the nodes that need splitting is
-a stack, we're building our tree in a depth first manner. This effectively means
-that when we start building a branch from the root, we would continue until a
-leaf is reached assuming that we would only have memory to compute the stats for
-a single node.
+Because the underlying data structure for storing the nodes that need splitting
+is a stack, we're building our tree in a depth first manner. This effectively
+means that when we start building a branch from the root, we would continue
+until a leaf is reached assuming that we would only have memory to compute the
+stats for a single node.
+
+Now that we understand how a decision tree works in Spark ML, let's create one.
+
+A decision tree classifier can be created in Spark ML with the code in listing
+4.6. Note that it exposes every concept we've seen thus far.
+
+.Creating a decision tree classifier in Spark ML.
+[source,scala]
+----
+import org.apache.spark.ml.classification.DecisionTreeClassifier
+val dtc = new DecisionTreeClassifier()
+  .setImpurity("gini") // <1>
+  .setMaxBins(32) // <2>
+  .setMinInstancesPerNode(1) // <3>
+  .setMaxDepth(5) // <4>
+  .setMinInfoGain(0.0) // <5>
+----
+<1> We can change the strategy used to measure impurity between "gini" and
+"entropy".
+<2> The maximum number of buckets used to bin high-arity features can be
+changed through the setMaxBins method.
+<3> The minimum number of observations falling into either child produced by a
+decision node to be considered a valid decision node.
+<4> The maximum depth of the tree.
+<5> The minimum information gain a decision must reach to be valid. Otherwise,
+it becomes a leaf.
+
+All provided values are the default ones in Spark ML.
+
+We now have all the tools necessary to dive into a real-world example!
 
 == Preparing the data
 
@@ -552,11 +653,13 @@ in table 4.10.
 |===
 |actor|type|payload|etc
 |{user data}|ClosedIssuesEvent|{ content }|...
-|{...}|PushEvent|{...}|...
+|{"login": "", "id": 1, ...}|PushEvent|{...}|...
 |{...}|RepositoryCreateEvent|{...}|...
 |{...}|PushEvent|{...}|...
 |{...}|BranchCreateEvent|{...}|...
 |===
+
+Much of it has been omitted because the raw format doesn't bring a lot of value.
 
 To what is shown in table 4.11.
 
@@ -585,6 +688,9 @@ uncompressing the file for us.
 ----
 val events = spark.read.json("/data/2016-01-01.json.gz")
 ----
+
+As usual, we have to load everything because all the types of event are mixed
+together even though we're only interested in the events relating to the issues.
 
 When reading JSON data, we use a SparkSesion (named spark in the REPL), this
 SparkSession makes a `read` method available which sends back a
@@ -830,6 +936,17 @@ text and the name of the label.
 
 We clean up the issue text a bit by removing empty lines.
 
+A few examples of the transformation in the flatMap is given in table 4.12.
+
+.Transforming GHIssues into Issues.
+[options="header"]
+|===
+|GHIssue|Seq of Issue
+|GHIssue("some\ntext", Seq(GHLabel("url", "question", "color")))|Seq(Issue("some text", "question"))
+|GHIssue("t1", Seq(GHLabel("u1", "question", "c1"), GHLabel("u2", "bug", "c2")))|Seq(Issue("t1", "question"), Issue("text", "bug"))
+|GHIssue("t2", Seq(GHLabel("u1", "wontfix", "c1"), GHLabel("u2", "up-for-grabs", "c2")))|Seq()
+|===
+
 As always, you can have a look at our dataset in its final form with
 `issues.show(5)`.
 
@@ -840,13 +957,13 @@ section.
 
 === Saving the data
 
-We'll write our output dataset in JSON in the /data/data-prep-c7.json folder in
+We'll write our output dataset in JSON in the /data/data-prep-c4.json folder in
 listing 4.19.
 
 .Saving our data in JSON format.
 [source,scala]
 ----
-issues.write.json("/data/data-prep-c7.json")
+issues.write.json("/data/data-prep-c4.json")
 ----
 
 We're ready to start building our pipeline!
@@ -873,7 +990,7 @@ the code in listing 4.20.
 .Reading back our issues data.
 [source,scala]
 ----
-val issues = spark.read.json("/data/data-prep-c7.json")
+val issues = spark.read.json("/data/data-prep-c4.json")
 ----
 
 === Splitting training and testing datasets
@@ -971,7 +1088,7 @@ The pattern is the regex that will be used to match tokens. We also specify a
 minimum length of two for a token to be kept in the output vector.
 
 As an example, if we were to apply this RegexTokenizer to the dataset in table
-4.12, we'd obtain the dataset in table 4.13.
+4.13, we'd obtain the dataset in table 4.14.
 
 .Dataset before applying the RegexTokenizer
 [options="header"]
@@ -1047,7 +1164,7 @@ to lowercase. As usual, you can call the explainParams method on remover to
 know a bit more about the other parameters.
 
 Let's see how it works with a before/after application of a StopWordsRemover
-in tables 4.14 and 4.15.
+in tables 4.15 and 4.16.
 
 .Dataset before applying the StopWordsRemover
 [options="header"]
@@ -1108,7 +1225,7 @@ x modulo y = (x & (y - 1))
 & being bitwise AND
 ****
 
-Tables 4.16 and 4.17 show a HashingTF transformer with numFeatures = 4 in
+Tables 4.17 and 4.18 show a HashingTF transformer with numFeatures = 4 in
 action.
 
 .Dataset before applying the HashingTF
@@ -1148,7 +1265,7 @@ def hash(word: String, numFeatures: Int): Int =
   nonNegativeMod(scala.util.hashing.MurmurHash3.stringHash(word), numFeatures)
 ----
 
-We need the modulo operation to give back non negative results since those
+We need the modulo operation to give back non negative results because those
 results will be treated as vector indices.
 
 For example, `hash("text", 4)` gives us 3, that's why the third index is one,
@@ -1212,7 +1329,7 @@ The minimum document frequency parameter is used to filter out terms that do
 not meet this requirement, it defaults to one.
 
 An example of the result of IDF's fit and IDFModel's transform is shown in
-tables 4.18 and 4.19 with minDocFreq = 0 (no filtering).
+tables 4.19 and 4.20 with minDocFreq = 0 (no filtering).
 
 .Dataset before applying IDF and IDFModel
 [options="header"]
@@ -1267,7 +1384,7 @@ tfidf("text", corpus.head, corpus)
 
 Note that this snippet of code use perfect term frequencies and not the ones
 outputted by HashingTF where there were hashing collisions that's why TF-IDF
-measures differ between what is shown in table 4.19 and what would be outputted
+measures differ between what is shown in table 4.21 and what would be outputted
 by IDF.
 
 We now have a feature vector ready to be fed into a decision tree algorithm.
@@ -1300,27 +1417,44 @@ val pipeline = new Pipeline()
   .setStages(Array(labelIndexer, tokenizer, remover, hashingTF, idf, dtc, indexToLabel))
 ----
 
-Since a pipeline is an Estimator we can call fit on it to train our machine
+Because a pipeline is an Estimator we can call fit on it to train our machine
 learning model: `val model = pipeline.fit(training)`.
 
-We can sum up the steps the issues went through by the schema in figure 4.5.
+We can sum up the steps the issues went through by the schema in figure 4.8.
 
 .Result of calling the fit method.
-image::../images/c4_pipeline_fit.png[]
+image::../images/c4_pipeline_fit.svg[]
 
 We can now try out our model by calling transform on our test dataset
 `val predictions = model.transform(test)`.
 
-Refer to the schema in figure 4.6 to see the journey the test dataset endured.
+Refer to the schema in figure 4.9 to see the journey the test dataset endured.
 
 .Result of calling the transform method.
-image::../images/c4_pipeline_transform.png[]
+image::../images/c4_pipeline_transform.svg[]
 
 You can compare predicted labels with the actual ones with
 `predictions.select("label", "predictedLabel").show(10)`. You'll notice that
 this sample seems to have poor classification performance. This is mainly
 because of the limite size of our sample. We'll tackle performance issues in the
 next section.
+
+You can also have a look at the resulting decision tree and get an idea of which
+decisions were made about which features by following the code in listing 4.33.
+
+.Displaying the structure of the decision tree.
+[source,scala]
+----
+model
+  .stages(5) // <1>
+  .asInstanceOf[DecisionTreeClassificationModel] // <2>
+  .toDebugString() // <3>
+----
+<1> You need to know the index of the decision tree model in the pipeline model
+(it's the same as the index of the decision tree in the pipeline).
+<2> Because each stage of the PipelineModel is a Transformer, we need to cast it
+to get a DecisionTreeClassificationModel.
+<3> We can now call toDebugString which will the decision tree in text format.
 
 Lastly, you can also save your model for later with
 `model.save("/data/issue-classifier-model")`. You'll be able to reload it
@@ -1344,8 +1478,8 @@ performant our model is and tune it which we'll demonstrate in this subsection.
 There are three evaluators in Spark ML:
 
 - `RegressionEvaluator` for regression
-- `BinaryClassificationEvaluator` for binary classification 
-- `MulticlassClassificationEvaluator` for multiclass classification 
+- `BinaryClassificationEvaluator` for binary classification
+- `MulticlassClassificationEvaluator` for multiclass classification
 
 For the problem at hand, we'll use the `MulticlassClassificationEvaluator` as
 our labels can take three values (bug, enhancement and question).
@@ -1370,7 +1504,7 @@ instant. Note that weighted precision, weighted recall and f1 score are all
 weighted by the number of observations for each observed class.
 
 Let's consider a sample predictions with the actual labels side by side in
-table 4.20.
+table 4.22.
 
 .Comparing actual and predicted labels.
 [options="header"]
@@ -1391,8 +1525,8 @@ table 4.20.
 Accuracy can be computed as latexmath:[$\frac{5}{10} = 0.5$] because there are
 five correctly classified examples and ten examples total.
 
-For the rest of the evaluation metrics, we'll refer to table 4.21 which contains
-useful results regarding table 4.20.
+For the rest of the evaluation metrics, we'll refer to table 4.23 which contains
+useful results regarding table 4.22.
 
 .True positives, false positives and false negatives for each label.
 [cols="h,4*",options="header"]
@@ -1414,7 +1548,7 @@ label was question and we predicted something else entirely
 - the number of observations is four because there are four rows for which the
 actual label is question
 
-From table 4.21, we can compute the metrics in table 4.22.
+From table 4.23, we can compute the metrics in table 4.24.
 
 .Precision, recall and F1-score for each label.
 [cols="h,4*",options="header"]
@@ -1449,7 +1583,7 @@ computed per class on each executor, aggregated (through a reduce operation) and
 then retrieved on the master node where the metric is finally computed.
 
 Now that we understand how the MulticlassClassificationEvaluator works, let's
-use one in listing 4.33.
+use one in listing 4.34.
 
 .Creating a MulticlassClassificationEvaluator.
 [source,scala]
@@ -1484,7 +1618,7 @@ the test dataset (as we've just seen). Each of the k model will be evaluated
 on its respective test data and a final evaluation metric averaging the k
 evaluations will be produced.
 
-As an example, let's investigate the dataset in table  4.23.
+As an example, let's investigate the dataset in table  4.25.
 
 .A sample dataset.
 [options="header"]
@@ -1519,12 +1653,12 @@ As we've seen when diving into the decision tree algorithm, there are quite a
 lot of knobs associated with the learning algorithm such as the impurity
 strategy (Gini or entropy), the maximum depth of the tree, the minimum
 information gain for a node to be kept, the minimum number of instances falling
-into a node for it to be kept or the maximum number of bins used to discretize
-a continuous features. A lot of parameters, plus a lot of possible values is
-what we call a large parameter space that we'll have to explore if we want to
-get the best model possible. Those parameters are also called hyperparameters
-which means they are parameters specific to the model which can't be learned
-during training.
+into either child of a node for it to be kept or the maximum number of bins
+used to discretize high-arity features. A lot of parameters, plus a lot of
+possible values is what we call a large parameter space that we'll have to
+explore if we want to get the best model possible. Those parameters are also
+called hyperparameters which means they are parameters specific to the model
+which can't be learned during training.
 
 Of course, we could leave the default values provided by Spark and be done with
 our 58% of issues correctly labeled but we wouldn't have solved our original
@@ -1539,11 +1673,25 @@ tested the model with the best metric comes out as the winner.
 As a result this process involves:
 
 - a Pipeline to be tuned
-- a set of parameters we want to try (also called a grid)
+- a set of parameters we want to try (c.f. table 4.26)
 - an Evaluator
 - a CrossValidator
 
-Let's see those components in action in listing 4.34.
+The parameters you can try when using a DecisionTreeClassifier are summed up
+in table 4.26.
+
+.The different parameters that can be tuned for a DecisionTreeClassifier.
+[options="header"]
+|===
+|Name of the parameter|Description|Default value|Accepted values
+|impurity|Strategy used to compute impurities|gini|gini or entropy
+|maxBins|Maximum number of buckets when binning high-arity features|32|>= the largest arity of the categorical features
+|maxDepth|Maximum depth of the resulting decision tree|5|>= 0
+|minInfoGain|Minimum information gain for a decision node|0.0|>= 0.0
+|minInstancesPerNode|Minimum number of observations falling into either child produced by a decision to be considered a valid decision node|1|>= 1
+|===
+
+Let's see those components in action in listing 4.35.
 
 .Tuning our model.
 [source,scala]
@@ -1585,7 +1733,7 @@ training DataFrame) in order to produce unbiased performance metrics when
 evaluating the test DataFrame `evaluator.evaluate(predictions)`.
 
 The code to get the best parameters is a bit cryptic and is detailed in
-listing 4.35.
+listing 4.36.
 
 .Getting the best parameters out of our model.
 [source,scala]
@@ -1601,7 +1749,7 @@ val bestEstimatorParamMap = cvModel
 <3> maxBy finds the first element which has the largest value according to the passed function in Scala, in our case the metric. Basically, we want the pair with the highest metric.
 <4> We want the first element of the pair: the parameter map.
 
-You should get something along the lines of what's in listing 4.36.
+You should get something along the lines of what's in listing 4.37.
 
 .Best parameter map.
 [source,scala]
@@ -1612,12 +1760,19 @@ You should get something along the lines of what's in listing 4.36.
 ----
 
 So it seems that the best model was built using a decision tree with a maximum
-depth of five. We notice that the accuracy indeed got better
+depth of sven. We notice that the accuracy indeed got better
 `evaluator.evaluate(predictions)` now gives back 0.61.
+
+That's still fairly poor performance for a classifier. The main reason is the
+lack of data. Indeed, we're only considering one day of issues logged on GitHub
+which isn't a lot so you could run the different steps locally on your computer
+without issues. However, if we expand the dataset, we're getting much better
+results. For example, when considering one month of data I get around 75%
+accuracy.
 
 We can also include parameters not only from the machine learning model in
 our pipeline but also from other components that have parameters. For example,
-we could have built our parameter grid like the one in listing 4.37.
+we could have built our parameter grid like the one in listing 4.38.
 
 .Building a parameter grid with parameters from our IDF component.
 [source,scala]
@@ -1632,7 +1787,7 @@ However, be very careful when exploring a parameter space using cross validation
 as the number of models being trained to get to the best one is quadratic:
 it is the product of the number of values in each parameter grid multiplied by
 the number of folds used during cross validation. For example, let's say I
-have the parameter grid and cross validator in listing 4.38.
+have the parameter grid and cross validator in listing 4.39.
 
 .An example parameter grid and cross validator.
 [source,scala]
@@ -1656,28 +1811,46 @@ process will train a model.
 
 == Summary
 
-When learning from a month of data (January 2016) I managed to get around 75%
-accuracy which starts to get interesting as far as classifiers are concerned
-with minimal effort: exactly the same pipeline but with a little more
-exploration of the best hyperparameters.
+We've tackled a lot of new concepts in this chapter and uncovered all the nooks
+and crannies of distributed decision trees. That's a lot more than quite a few
+people in the industry who often don't have the slightest idea of how an
+algorithm works but keep on applying it and wonder why sometimes it doesn't
+really work.
 
-Once a satisfactory model is built we could imagine building a tool integrating
+When a satisfactory model is built we could imagine building a tool integrating
 with GitHub that receives incoming issues on projects belonging to the people
 who subscribed to our little product and affect them a label based on what our
 model predicts.
+
+To improve the performance of our model, we could even add other features to
+our dataset such as the author type as we discussed earlier. This is left as an
+exercise because the chapter is clearly already long enough.
 
 We'll try to improve on our model performance in the next chapter by studying a
 classification algorithm that builds on decision trees: random forest.
 
 == Exercises
 
-- find the next decision node
-- find the most common labels:
+- Find the next decision nodes of the trees we built in figure 4.7.
+- Compare your computations for Gini impurities, entropies and information gains
+in from part 2.1.
+- Find the most common labels from the `ghIssues` variable in listing 4.11.
+
+.Answer
+[source,scala]
+----
 ghIssues
   .flatMap(_.labels.map(_.name))
   .groupBy("value")
   .count()
   .orderBy(desc("count"))
   .show(5)
-- how many issues per label
+----
+- Find ow many issues there are per label from the `issues variable in listing
+4.13.
+
+.Answer
+[source,scala]
+----
 issues.groupBy("label").count().show()
+----
