@@ -112,12 +112,19 @@ The "model" we just built relied on our own simple heuristic; however, we
 still don't know how a decision tree classifier might arrive at this result (or
 a far better one).
 
-The process of learning, or building the decision tree, can
-be broken down as the following process: finding the best decision to make from
-the current set of observations, deciding if this decision has to be turned into
-a decision node or a leaf node according to a few criteria. If we choose to
-create a decision node, we go back to the "finding the best decision" step until
-we're left with only leaves.
+The main idea is to recursively partition our training dataset based on the
+value of a feature until we're left with partitions containing examples
+belonging to the same class. A single step of partitioning will lead to a
+decision node in our tree whereas arriving to a partition containing
+observations with the same class will be represented as a leaf node in our
+decision tree.
+
+In a more detailed way, the process of learning, or building the decision tree,
+can be broken down as the following process: finding the best decision to make
+from the current partition of observations, deciding if this decision has to be
+turned into a decision node or a leaf node according to a few criteria. If we
+choose to create a decision node, we go back to the "finding the best decision"
+step until we're left with only leaves.
 
 Each best decision corresponds to a binary split of the dataset according to a
 feature value. Intuitively, the best decisions are the ones that most
@@ -1448,7 +1455,7 @@ decisions were made about which features by following the code in listing 4.33.
 model
   .stages(5) // <1>
   .asInstanceOf[DecisionTreeClassificationModel] // <2>
-  .toDebugString() // <3>
+  .toDebugString // <3>
 ----
 <1> You need to know the index of the decision tree model in the pipeline model
 (it's the same as the index of the decision tree in the pipeline).
@@ -1833,7 +1840,7 @@ classification algorithm that builds on decision trees: random forest.
 
 - Find the next decision nodes of the trees we built in figure 4.7.
 - Compare your computations for Gini impurities, entropies and information gains
-in from part 2.1.
+in from part 2.6.
 - Find the most common labels from the `ghIssues` variable in listing 4.11.
 
 .Answer
