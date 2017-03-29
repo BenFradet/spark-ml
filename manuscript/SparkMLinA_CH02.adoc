@@ -145,13 +145,7 @@ As you can see the schema of our DataFrame fits what was in the original file
 and each column's type has been correctly inferred.
 
 We can also find out what the first few rows look like by calling show on the
-DataFrame in listing 2.3.
-
-.Peeking at the first 5 rows of our titanicTrain DataFrame look like.
-[source,scala]
-----
-titanicTrain.show(5)
-----
+DataFrame with the following instruction: `titanicTrain.show(5)`.
 
 Your result should be something along the lines of table 2.1.
 
@@ -375,7 +369,7 @@ much more attention. How did we arrive at 15? This is given as an exercise. A
 more involved analysis might concern itself with this kind of issue.
 
 At the other end of the spectrum, the maximum Fare is $512. Here as well, it
-appears to be some kind of mistake since the second highest fares are in the
+appears to be some kind of mistake because the second highest fares are in the
 $200 range. Because there are only three people who might have paid $512, we
 won't dig deeper. Here as well, try to figure out how we arrived at those
 numbers.
