@@ -17,15 +17,18 @@ save_images <- function(filename, df) {
   svg(paste(filename, ".svg", sep = ""))
   plot(df$x, df$y, pch = df$forms, xlab = "x", ylab = "y")
   dev.off()
+  pdf(paste(filename, ".pdf", sep = ""))
+  plot(df$x, df$y, pch = df$forms, xlab = "x", ylab = "y")
+  dev.off
 }
 
-save_images("kmeans_before", df)
+save_images("c7_kmeans_before", df)
 
 index1 <- 5
 index2 <- 8
 df$forms[index1] <- full_circle
 df$forms[index2] <- full_triangle
-save_images("kmeans_init", df)
+save_images("c7_kmeans_init", df)
 
 dist <- function(x1, y1, x2, y2) {
   return(sqrt((x1 - x2)^2 + (y1 - y2)^2))
@@ -48,7 +51,7 @@ df$forms <- apply(df, 1,
                })
 df$forms[index1] <- full_circle
 df$forms[index2] <- full_triangle
-save_images("kmeans_first", df)
+save_images("c7_kmeans_first", df)
 
 x1 <- mean(df[df$forms == circle, "x"])
 y1 <- mean(df[df$forms == circle, "y"])
@@ -57,4 +60,4 @@ y2 <- mean(df[df$forms == triangle, "y"])
 df$forms[index1] <- circle
 df$forms[index2] <- triangle
 df <- rbind(df, c(x1, y1, full_circle), c(x2, y2, full_triangle))
-save_images("kmeans_new_center", df)
+save_images("c7_kmeans_new_center", df)
