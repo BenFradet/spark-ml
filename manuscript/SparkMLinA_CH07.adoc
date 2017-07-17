@@ -61,13 +61,13 @@ The whole dataset can be obtained on the CDC's website
 in figure 7.1.
 
 .Weight in pounds as a function of height in inches fof 50 randomly sampled people from the 2015 NHIS.
-image::../images/before.png[]
+image::../images/c7_before.svg[]
 
 Using those heights and weights, we split our data into two clusters using a
 clustering algorithm we'll detail in the next section (figure 7.2).
 
 .Weight as a function of height for 50 randomly sampled people from the 2015 NHIS separated into 2 clusters. The elements belonging to the first cluster are denoted by crosses, those belonging to the second are represented as circles.
-image::../images/kmeans.png[]
+image::../images/c7_kmeans1.svg[]
 
 Thanks to the clustering algorithm, we have effectively discovered new
 information: we've separated the sample into two categories. However, we don't
@@ -83,7 +83,7 @@ The effective gender associated with each data point is shown in figure 7.3.
 Males are represented as circles and females as crosses.
 
 .Weight as a function of height for 50 randomly sampled people from the 2015 NHIS. Females are represented as crosses and males as circles.
-image::../images/real.png[]
+image::../images/c7_real.svg[]
 
 If you compare the two plots (figure 7.2 and 7.3) you will notice that they are
 very similar. By clustering only the initial data (heights and weights of
@@ -144,7 +144,7 @@ work with throughout the explanation (table 7.1 and figure 7.4).
 |===
 
 .Scatter plot of the 10 synthetic data points used to illustrate our point.
-image::../images/kmeans_before.png[]
+image::../images/c7_kmeans_before.svg[]
 
 We then randomly choose _K_ (in our case 2) data points from the dataset and
 pick them as our initial centroids (the term used to refer to the center of our
@@ -159,7 +159,7 @@ clusters) as shown in table 7.2 and figure 7.5.
 |===
 
 .10 synthetic data points from which we randomly selected two to serve as our initial centroids (a circle for the first cluster center, a triangle for the second).
-image::../images/kmeans_init.png[]
+image::../images/c7_kmeans_init.svg[]
 
 When this is done, we repeat the following process:
 
@@ -167,7 +167,7 @@ When this is done, we repeat the following process:
 affect a cluster depending on the closest centroid, as shown in figure 7.6:
 
 .Then synthetic data points for which we assigned a cluster based on the closest centroid. The centroids are filled and the "normal" points are not. The points belonging to the first cluster are represented as circles and those belonging to the second cluster as triangles.
-image::../images/kmeans_first.png[]
+image::../images/c7_kmeans_first.svg[]
 
 - We compute new centers (which are not part of the original dataset) for
 each cluster by averaging the positions (hence the name K-means) of all the
@@ -183,7 +183,7 @@ figure 7.7).
 |===
 
 .10 synthetic data points for which we computed new centroids by averaging the position of each data point belonging to the cluster. The new centers are filled.
-image::../images/kmeans_new_center.png[]
+image::../images/c7_kmeans_new_center.svg[]
 
 The last two steps describe a typical iteration: affecting clusters to data
 points and updating our centroids. This process is repeated until some stopping
@@ -292,7 +292,7 @@ val kmeans = new KMeans()
 Following is a schema of an iteration of the K-means algorithm (figure 7.8).
 
 .Schema of an iteration of the K-Means algorithm in Spark ML with 4 executors
-image::../images/kmeans_iter.png[]
+image::../images/c7_kmeans_iter.svg[]
 
 As far as Spark ML is concerned, an iteration will consist of sending the
 centroids computed by the previous iteration (or the initial ones if it's the
